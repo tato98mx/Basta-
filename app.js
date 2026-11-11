@@ -274,17 +274,87 @@ function pickSpanishVoice() {
   } catch (e) { return null; }
 }
 
+/* --- Desbloqueo y cola de voz (clave en iOS/Safari) -------------------- */
+/*
+ * CAUSA RAÍZ DEL FALLO DE VOZ (verificado en vivo contra el Worker con
+ * un stub estilo iOS): en Safari de iPhone, WebKit descarta EN SILENCIO
+ * (sin evento ni error) todo speak() que NO corre sincrónicamente dentro
+ * de un gesto del usuario (tap/click). En Basta TODOS los anuncios se
+ * disparaban por mensajes del servidor (ruleta, cuenta atrás, fin de
+ * ronda, podio), nunca dentro de un gesto, así que NINGUNO sonaba: ni la
+ * letra, ni el podio, ni el ganador. El único gesto que existía (un
+ * pointerdown de un solo uso en init) solo desbloqueaba el AudioContext,
+ * nunca speechSynthesis. Por eso el texto del anuncio se construía bien
+ * (el servidor manda roundWinner/roundPoints) pero no se oía nada.
+ *
+ * El arreglo tiene 4 partes:
+ *  1. unlockVoice(): en CADA gesto del usuario (pointerdown/touchstart)
+ *     se hace resume() y un speak() silencioso (volumen 0) DENTRO del
+ *     gesto, que es lo que desbloquea la voz en iOS para el resto de la
+ *     sesión. También se reintenta en cada gesto hasta que haya voces.
+ *  2. Cola con watchdog: los anuncios se encolan y se dicen de uno en
+ *     uno. Si un utterance se descarta en silencio (no llega onstart),
+ *     el watchdog lo detecta, no se pierde el texto: se reencola para
+ *     decirlo tras el próximo desbloqueo por gesto.
+ *  3. Espera de voces: si getVoices() aún está vacío se espera a
+ *     `voiceschanged` (con límite) antes de hablar.
+ *  4. Las frases largas se parten en oraciones: en iOS los textos de
+ *     ~15 s se cortan; el anuncio de fin de ronda se dice en 2-3 partes.
+ */
+var voiceUnlocked = false;
+var voicesReady = false;
+var speechQueue = []; // { text, opts, tries }
+var speechBusy = false;
+var speechWaitingVoices = false;
+
+function refreshVoices() {
+  try {
+    var vs = window.speechSynthesis ? window.speechSynthesis.getVoices() || [] : [];
+    if (vs && vs.length) voicesReady = true;
+  } catch (e) {}
+  spanishVoice = pickSpanishVoice();
+  if (spanishVoice) voicesReady = true;
+}
+
+function unlockVoice() {
+  if (!("speechSynthesis" in window)) return;
+  refreshVoices();
+  try { window.speechSynthesis.resume(); } catch (e) {}
+  if (voiceUnlocked) { pumpSpeech(); return; }
+  if (!voicesReady) return; // sin voces aún: reintentar en el próximo gesto
+  try {
+    var u = new SpeechSynthesisUtterance("¡Hola!");
+    u.volume = 0; // silencioso: solo desbloquea, no se oye
+    u.lang = "es-MX";
+    if (spanishVoice) u.voice = spanishVoice;
+    window.speechSynthesis.speak(u);
+    voiceUnlocked = true;
+  } catch (e) {}
+  pumpSpeech();
+}
+
 if (typeof window !== "undefined" && "speechSynthesis" in window) {
   try {
-    window.speechSynthesis.onvoiceschanged = function () { spanishVoice = pickSpanishVoice(); };
-    spanishVoice = pickSpanishVoice();
+    window.speechSynthesis.onvoiceschanged = function () { refreshVoices(); pumpSpeech(); };
+    refreshVoices();
   } catch (e) {}
+}
+
+function splitSentences(text) {
+  var parts = String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  var out = [];
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    if (p) out.push(p);
+  }
+  return out.length ? out : [text];
 }
 
 /**
  * Habla `text` en español (lang es-MX). Si no hay voz en español o no hay
  * Web Speech API, usa tonos como respaldo (y no rompe el juego).
- * Hace ducking de la música mientras habla.
+ * Hace ducking de la música mientras habla. Los textos se encolan y se
+ * dicen de uno en uno para que en iOS no se pierdan ni se corten.
  */
 function speak(text, opts) {
   if (!text || muted) return;
@@ -293,37 +363,112 @@ function speak(text, opts) {
     playBeep(false);
     return;
   }
+  var chunks = splitSentences(text);
+  for (var i = 0; i < chunks.length; i++) {
+    speechQueue.push({ text: chunks[i], opts: opts, tries: 0 });
+  }
+  pumpSpeech();
+}
+
+function pumpSpeech() {
+  if (speechBusy || !speechQueue.length) return;
+  if (muted) { speechQueue.length = 0; return; }
+  if (!("speechSynthesis" in window)) { speechQueue.length = 0; playBeep(false); return; }
+  if (!voicesReady) {
+    refreshVoices();
+    if (!voicesReady) {
+      if (!speechWaitingVoices) {
+        speechWaitingVoices = true;
+        // Esperar a que carguen las voces; si no llegan, hablar igual.
+        setTimeout(function () { speechWaitingVoices = false; pumpSpeech(); }, 1200);
+      }
+      return;
+    }
+  }
+  speechBusy = true;
+  speakNow(speechQueue[0]);
+}
+
+function speakNow(item) {
+  try { window.speechSynthesis.resume(); } catch (e) {}
+  var u;
   try {
-    var u = new SpeechSynthesisUtterance(text);
-    u.lang = "es-MX";
-    if (spanishVoice) u.voice = spanishVoice;
-    u.rate = (opts && opts.rate) || 1.05;
-    u.pitch = (opts && opts.pitch) || 1.1;
-    u.volume = 1; // voz fuerte: 5/5
-    var done = false;
-    var unduck = function () {
-      if (done) return;
-      done = true;
-      speechActive = Math.max(0, speechActive - 1);
-      if (speechActive === 0) duckMusic(false);
-    };
-    u.onstart = function () { speechActive++; duckMusic(true); };
-    u.onend = unduck;
-    u.onerror = unduck;
-    // Seguridad: si los eventos no llegan, restaurar la música igual.
-    setTimeout(unduck, text.length * 130 + 3000);
+    u = new SpeechSynthesisUtterance(item.text);
+  } catch (e) { finishSpeech(item, true); return; }
+  u.lang = "es-MX";
+  if (spanishVoice) u.voice = spanishVoice;
+  u.rate = (item.opts && item.opts.rate) || 1.05;
+  u.pitch = (item.opts && item.opts.pitch) || 1.1;
+  u.volume = 1; // voz fuerte: 5/5
+  var done = false;
+  var started = false;
+  var finish = function (ok) { finishSpeech(item, ok, started); };
+  var finishOnce = function (ok) {
+    if (done) return;
+    done = true;
+    finish(ok);
+  };
+  u.onstart = function () { if (done) return; started = true; speechActive++; duckMusic(true); };
+  u.onend = function () { finishOnce(true); };
+  u.onerror = function (ev) {
+    // "not-allowed" = sin activación de usuario (iOS): reencolar.
+    finishOnce(!(ev && ev.error === "not-allowed"));
+  };
+  // Watchdog 1: si no arranca (descarte silencioso en iOS, sin evento),
+  // no dejar la cola atorada: marcarlo como fallido.
+  setTimeout(function () { if (!done && !started) finishOnce(false); }, 1500);
+  // Watchdog 2: si arranca pero nunca llega onend, cerrar igual.
+  setTimeout(function () { if (!done) finishOnce(true); }, Math.max(6000, item.text.length * 200 + 6000));
+  try {
     window.speechSynthesis.speak(u);
   } catch (e) {
-    playBeep(false);
+    finishOnce(false);
   }
+}
+
+/* Cierra el utterance en curso: lo quita de la cola; si falló por falta
+ * de desbloqueo, se reencola UNA vez para decirlo tras el próximo gesto. */
+function finishSpeech(item, ok, started) {
+  speechActive = Math.max(0, speechActive - 1);
+  if (speechActive === 0) duckMusic(false);
+  speechBusy = false;
+  if (speechQueue.length && speechQueue[0] === item) speechQueue.shift();
+  if (!ok && !started && item.tries < 1) {
+    item.tries++;
+    speechQueue.unshift(item);
+    // Si el desbloqueo por gesto ya llegó mientras el utterance estaba
+    // pendiente, reintentar ahora; si no, esperar al próximo gesto.
+    if (voiceUnlocked) pumpSpeech();
+    return; // si no, esperar al próximo gesto (unlockVoice hace pumpSpeech)
+  }
+  if (speechQueue.length) pumpSpeech();
 }
 
 function stopSpeaking() {
   try {
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   } catch (e) {}
+  speechQueue.length = 0;
+  speechBusy = false;
   speechActive = 0;
   duckMusic(false);
+}
+
+/** Prueba de voz desde el lobby: quita el silencio si estaba puesto,
+ *  desbloquea la voz dentro del gesto (tap) y dice un ejemplo del
+ *  anuncio de fin de ronda, para probarla sin jugar una ronda entera. */
+function testVoice() {
+  ensureAudio();
+  if (muted) {
+    muted = false;
+    try { localStorage.setItem(LS_MUTED, "0"); } catch (e) {}
+    if (musicGain) musicGain.gain.value = MUSIC_LEVEL;
+    if (sfxGain) sfxGain.gain.value = SFX_LEVEL;
+    updateSoundBtn();
+  }
+  unlockVoice(); // dentro del gesto: desbloquea la voz en iOS
+  speak("El ganador de la ronda es Tato, con 900 puntos. En segundo lugar, Milly, con 600 puntos.");
+  toast("🔊 Probando la voz… Si no se escucha, revisa el interruptor de silencio de tu iPhone y el volumen.");
 }
 
 /* ------------------------------------------------------------------ */
@@ -939,8 +1084,12 @@ function renderLobby(state) {
     '</form>' +
     (code ? '<div class="lobby-code-big">' + esc(code) + '</div><p class="share-note">Comparte este código con tus amigos para que se unan (de 2 a 6 jugadores). En cuanto entre el 2º jugador, todos se ponen listos… ¡y arranca la ruleta!</p>' : "") +
     (players.length === 1 ? '<p class="share-note"><b>' + esc(players[0].name) + '</b> ya está en la sala. Esperando a alguien más…</p>' : "") +
+    '<button type="button" class="btn btn-ghost" id="voiceTestBtn" style="width:100%;margin-top:12px">🔊 Probar voz</button>' +
+    '<p class="share-note">Toca “Probar voz” para oír un ejemplo del anuncio de fin de ronda sin jugar. Si no se escucha, revisa el interruptor de silencio de tu iPhone y el volumen.</p>' +
     '</div>';
 
+  var vt = $("voiceTestBtn");
+  if (vt) vt.addEventListener("click", function () { testVoice(); });
   var form = $("lobbyForm");
   if (form) form.addEventListener("submit", function (ev) { ev.preventDefault(); createRoom(); });
   var joinBtn = $("joinBtn");
@@ -983,7 +1132,7 @@ function renderReady(state) {
     '</div>';
   var btn = $("readyBtn");
   if (btn) btn.addEventListener("click", function () {
-    ensureAudio(); startMusic();
+    ensureAudio(); startMusic(); unlockVoice();
     send({ type: "ready" });
     btn.disabled = true;
     btn.textContent = "✅ ¡Listo! Esperando a los demás…";
@@ -1352,11 +1501,17 @@ function init() {
   updateSoundBtn();
   var sb = $("soundBtn");
   if (sb) sb.addEventListener("click", function () { ensureAudio(); toggleMute(); });
-  // Desbloquear el audio en iOS con el primer toque.
-  document.addEventListener("pointerdown", function once() {
+  // Desbloquear el audio y la voz en iOS con cada toque: en Safari los
+  // speak() fuera de un gesto se descartan en silencio, así que cada
+  // tap reintenta el desbloqueo (unlockVoice es barato tras el primero).
+  document.addEventListener("pointerdown", function () {
     ensureAudio();
-    document.removeEventListener("pointerdown", once);
+    unlockVoice();
   });
+  document.addEventListener("touchstart", function () {
+    ensureAudio();
+    unlockVoice();
+  }, { passive: true });
   var params = new URLSearchParams(window.location.search || "");
   if (params.get("demo") === "1") { startDemo(); return; }
   if (!apiBase()) {
@@ -1385,6 +1540,8 @@ window.__BASTA__ = {
   buildRoundEndAnnouncement: buildRoundEndAnnouncement,
   buildGameOverAnnouncement: buildGameOverAnnouncement,
   speak: speak,
+  testVoice: testVoice,
+  unlockVoice: unlockVoice,
   playApplause: playApplause,
   playFireworksSound: playFireworksSound
 };

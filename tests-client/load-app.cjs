@@ -46,10 +46,20 @@ class El {
 
 /** Carga app.js con `?demo=1` o sin demo según `search`. Devuelve el
  *  sandbox: sandbox.__BASTA__ trae los helpers expuestos y
- *  sandbox.__els__ es el mapa id → elemento (para leer stage.innerHTML). */
-function loadApp(search = "") {
-  const code = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+ *  sandbox.__els__ es el mapa id → elemento (para leer stage.innerHTML).
+ *  `opts` (opcional): { apiUrl, speech, appPath }.
+ *   - apiUrl: valor de window.GAME_API_URL antes de cargar app.js.
+ *   - speech: { synth, Utterance } para instalar window.speechSynthesis
+ *     y SpeechSynthesisUtterance (p. ej. un stub estilo iOS).
+ *   - appPath: ruta del app.js a cargar (por defecto ../app.js).
+ *   - storage: valores iniciales de localStorage { clave: valor }.
+ *  Los listeners de document quedan registrados y se pueden disparar con
+ *  sandbox.__dispatch__(type). */
+function loadApp(search = "", opts = {}) {
+  const appFile = opts.appPath || path.join(__dirname, "..", "app.js");
+  const code = fs.readFileSync(appFile, "utf8");
   const els = {};
+  const docListeners = {};
   const documentStub = {
     readyState: "complete",
     getElementById: (id) => {
@@ -57,9 +67,17 @@ function loadApp(search = "") {
       return els[id];
     },
     createElement: (tag) => new El(tag),
-    addEventListener: () => {},
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+    removeEventListener: (type, fn) => {
+      const arr = docListeners[type] || [];
+      const i = arr.indexOf(fn);
+      if (i >= 0) arr.splice(i, 1);
+    },
   };
   const store = {};
+  if (opts.storage) Object.assign(store, opts.storage);
   const localStorageStub = {
     getItem: (k) => (k in store ? store[k] : null),
     setItem: (k, v) => { store[k] = String(v); },
@@ -79,10 +97,20 @@ function loadApp(search = "") {
   };
   sandbox.window = sandbox;
   sandbox.location = { search };
+  if (opts.apiUrl) sandbox.GAME_API_URL = opts.apiUrl;
+  if (opts.speech) {
+    sandbox.speechSynthesis = opts.speech.synth;
+    sandbox.SpeechSynthesisUtterance = opts.speech.Utterance;
+  }
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox, { filename: "app.js" });
   sandbox.__els__ = els;
   sandbox.__doc__ = documentStub;
+  sandbox.__store__ = store;
+  sandbox.__docListeners__ = docListeners;
+  sandbox.__dispatch__ = (type, ev) => {
+    for (const fn of (docListeners[type] || []).slice()) fn(ev || {});
+  };
   return sandbox;
 }
 

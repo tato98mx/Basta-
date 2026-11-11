@@ -196,6 +196,24 @@ jugador y le manda el estado actual **directo a ese socket**.
   si hay (preferencia es-MX, luego es-ES, luego cualquier es). Si no hay
   voz en español o no hay Web Speech API, el juego sigue con pitidos de
   respaldo. Los anuncios se disparan una sola vez por ronda/fase.
+- **Desbloqueo en iOS (¡importante!):** en Safari de iPhone, WebKit
+  descarta EN SILENCIO todo `speak()` que no corre dentro de un gesto
+  del usuario. Por eso `unlockVoice()` corre en CADA `pointerdown` /
+  `touchstart`: hace `resume()` y un `speak()` silencioso (volumen 0)
+  dentro del gesto, que desbloquea la voz para el resto de la sesión.
+  Sin esto, NINGÚN anuncio sonaba (ni la letra, ni el podio).
+- **Cola de voz con watchdog:** los anuncios se encolan y se dicen de uno
+  en uno. Si un utterance se descarta en silencio (no llega `onstart`),
+  el watchdog (1.5 s) lo detecta y el texto se reencola UNA vez para
+  decirlo tras el próximo desbloqueo por gesto, en vez de perderse.
+  Si las voces aún no cargaron (`getVoices()` vacío), se espera a
+  `voiceschanged` (con límite de 1.2 s) antes de hablar. Las frases
+  largas se parten en oraciones (en iOS los textos de ~15 s se cortan).
+- **Botón "🔊 Probar voz" en el lobby:** quita el silencio si estaba
+  puesto, desbloquea la voz dentro del tap y dice un ejemplo del anuncio
+  de fin de ronda ("El ganador de la ronda es Tato, con 900 puntos…"),
+  para probarla sin jugar una ronda entera. Si no se escucha, avisa que
+  se revise el interruptor de silencio del iPhone y el volumen.
 - **Secuencia al arrancar cada ronda:** anuncio de la ronda
   ("¡Ronda 1!") + anuncio de la letra ("¡La letra es R!") + cuenta atrás
   3-2-1 con voz ("Tres", "Dos", "Uno").
@@ -215,6 +233,9 @@ jugador y le manda el estado actual **directo a ese socket**.
 /worker/tests/e2e-local.mjs                    (2 jugadores vs wrangler dev)
 /tests-client/load-app.cjs                     (carga app.js en VM con DOM mínimo)
 /tests-client/smoke.test.cjs                   (render + anuncios de voz)
+/tests-client/voice.test.cjs                   (voz en iOS: desbloqueo, cola, Probar voz)
+/tests-client/ios-speech-stub.cjs              (stub speechSynthesis estilo iOS)
+/tests-client/repro-voice-ios.cjs              (partida real vs Worker en vivo + voz iOS)
 /.github/workflows/deploy-worker.yml          (despliegue del Worker por push)
 /README.md                                     (reglas, cómo jugar, despliegue)
 /SPEC.md                                       (esta especificación)
