@@ -161,7 +161,16 @@ check(sameState(tato.lastState, ledya.lastState), "los dos clientes ven el mismo
   check(text.includes("En segundo lugar, Ledya, con 900 puntos."), "el anuncio nombra el 2º lugar con su TOTAL acumulado (900)");
   check(!text.includes("tercer"), "con 2 jugadores el anuncio NO menciona tercer lugar");
 }
-tato.send({ type: "next" });
+tato.send({ type: "continue" });
+await new Promise((r) => setTimeout(r, 800));
+check(tato.lastState.phase === "roundEnd", "con solo Tato en Continuar, la ronda NO avanza");
+// La puerta muestra quién ya tocó y quién falta.
+check(
+  tato.lastState.players.find((p) => p.id === "p1").continued === true
+  && tato.lastState.players.find((p) => p.id === "p2").continued === false,
+  "el estado muestra: Tato ya tocó Continuar, Ledya falta",
+);
+ledya.send({ type: "continue" });
 
 // ============ RONDA 2: Ledya canta ¡BASTA! → gracia de 5 s para Tato ============
 s = await tato.waitFor((x) => x.phase === "writing" && x.round === 2, "escritura ronda 2");
@@ -186,7 +195,11 @@ check(s.roundPoints.p1 === 900 && s.roundPoints.p2 === 900, "puntos ronda 2: 900
   check(text.includes("El ganador de la ronda es Ledya, con 900 puntos."), "anuncio ronda 2: ganadora Ledya, 900 pts de ronda");
   check(text.includes("En segundo lugar, Tato, con 1800 puntos."), "anuncio ronda 2: 2º Tato con TOTAL acumulado 1800");
 }
-tato.send({ type: "next" });
+// Puerta de Continuar: con solo Tato no avanza; con los 2, sí.
+tato.send({ type: "continue" });
+await new Promise((r) => setTimeout(r, 800));
+check(tato.lastState.phase === "roundEnd", "ronda 2: con solo Tato en Continuar, no avanza");
+ledya.send({ type: "continue" });
 
 // ============ RONDA 3: Tato canta ¡BASTA! → podio ============
 s = await tato.waitFor((x) => x.phase === "writing" && x.round === 3, "escritura ronda 3");
@@ -199,7 +212,9 @@ await new Promise((r) => setTimeout(r, 500));
 tato.send({ type: "basta", answers: w3t });
 s = await tato.waitFor((x) => x.phase === "roundEnd", "fin ronda 3");
 check(s.roundPoints.p1 === 900, "puntos ronda 3: Tato 900");
-tato.send({ type: "next" });
+// Última ronda: la puerta de Continuar también aplica para ver el podio.
+tato.send({ type: "continue" });
+ledya.send({ type: "continue" });
 s = await tato.waitFor((x) => x.phase === "gameOver", "podio final");
 console.log(`\nPodio: ${s.podium.map((id) => s.players.find((p) => p.id === id).name).join(" > ")}`);
 check(s.winner === "p1", "ganador del juego: Tato (2700-2700, primero en orden)");

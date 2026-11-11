@@ -22,6 +22,7 @@ import {
   pickLetter,
   publicState,
   rematch,
+  setContinue,
   setReady,
   startGame,
   submitAnswers,
@@ -527,6 +528,69 @@ describe("fin de partida y revancha", () => {
       assert.ok(addPlayer(s, `Jugador ${i}`), `jugador ${i} debería entrar`);
     }
     assert.equal(addPlayer(s, "Séptimo"), null);
+  });
+});
+
+describe("puerta de Continuar entre rondas", () => {
+  it("con solo 1 de 2 Continuar, la ronda NO avanza (espera sin límite)", () => {
+    const s = writingGame(1000, constRng(0.5), 3);
+    playRound(s, "p1");
+    assert.equal(s.phase, "roundEnd");
+    assert.equal(setContinue(s, "p1", { now: 2000 }).ok, true);
+    assert.equal(s.phase, "roundEnd", "con solo Tato, la ronda no debe avanzar");
+    assert.equal(s.round, 1);
+    // El estado público muestra quién ya tocó y quién falta.
+    const pub = publicState(s, "p1");
+    assert.deepEqual(pub.players.map((p) => p.continued), [true, false]);
+  });
+
+  it("con los 2 Continuar, avanza a la ruleta de la siguiente ronda", () => {
+    const s = writingGame(1000, constRng(0.5), 3);
+    playRound(s, "p1");
+    assert.equal(setContinue(s, "p1", { now: 2000 }).ok, true);
+    assert.equal(setContinue(s, "p2", { now: 2000 }).ok, true);
+    assert.equal(s.phase, "roulette", "con los 2, avanza a la ruleta");
+    assert.equal(s.round, 2);
+    // La puerta se resetea para la próxima ronda.
+    assert.deepEqual(s.players.map((p) => p.continued), [false, false]);
+  });
+
+  it("en la última ronda, los 2 Continuar llevan al podio final", () => {
+    const s = writingGame(1000, constRng(0.5), 3);
+    const nextRound = (now) => {
+      assert.equal(setContinue(s, "p1", { now }).ok, true);
+      assert.equal(setContinue(s, "p2", { now }).ok, true);
+      if (s.phase === "roulette") {
+        tick(s, now + 4001); tick(s, now + 7002);
+      }
+    };
+    playRound(s, "p1");
+    nextRound(2000); // → ronda 2
+    playRound(s, "p2", 3000);
+    nextRound(4000); // → ronda 3
+    playRound(s, "p1", 5000);
+    assert.equal(s.round, 3);
+    assert.equal(setContinue(s, "p1", { now: 6000 }).ok, true);
+    assert.equal(s.phase, "roundEnd", "con solo 1, el podio todavía no sale");
+    assert.equal(setContinue(s, "p2", { now: 6000 }).ok, true);
+    assert.equal(s.phase, "gameOver");
+    assert.equal(s.winner, "p1");
+    assert.deepEqual(s.players.map((p) => p.score), [2700, 2700]);
+  });
+
+  it("Continuar fuera de roundEnd falla", () => {
+    const s = writingGame();
+    assert.equal(s.phase, "writing");
+    assert.equal(setContinue(s, "p1").ok, false);
+    assert.equal(setContinue(s, "pX").ok, false, "jugador desconocido");
+  });
+
+  it("tocar Continuar dos veces no avanza solo", () => {
+    const s = writingGame(1000, constRng(0.5), 3);
+    playRound(s, "p1");
+    assert.equal(setContinue(s, "p1", { now: 2000 }).ok, true);
+    assert.equal(setContinue(s, "p1", { now: 2001 }).ok, true, "repetir no da error");
+    assert.equal(s.phase, "roundEnd", "repetir no sustituye al otro jugador");
   });
 });
 

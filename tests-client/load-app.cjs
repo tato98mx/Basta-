@@ -98,6 +98,7 @@ function loadApp(search = "", opts = {}) {
   sandbox.window = sandbox;
   sandbox.location = { search };
   if (opts.apiUrl) sandbox.GAME_API_URL = opts.apiUrl;
+  if (opts.fetch) sandbox.fetch = opts.fetch;
   if (opts.speech) {
     sandbox.speechSynthesis = opts.speech.synth;
     sandbox.SpeechSynthesisUtterance = opts.speech.Utterance;

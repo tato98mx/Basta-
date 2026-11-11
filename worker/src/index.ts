@@ -16,9 +16,9 @@ import {
   addPlayer,
   createGame,
   maybeEnterReady,
-  advance,
   publicState,
   rematch,
+  setContinue,
   setReady,
   submitAnswers,
   submitBasta,
@@ -320,8 +320,17 @@ export class RoomDO extends DurableObject<Env> {
         );
         break;
       }
+      case "continue": {
+        if (!playerId) break;
+        apply(setContinue(state, playerId, { now }));
+        break;
+      }
       case "next": {
-        apply(advance(state, { now }));
+        // Alias de compatibilidad para clientes ?v=2: "Siguiente ronda"
+        // ahora marca "Continuar" (la ronda solo avanza cuando TODOS
+        // lo han tocado).
+        if (!playerId) break;
+        apply(setContinue(state, playerId, { now }));
         break;
       }
       case "rematch": {

@@ -26,6 +26,93 @@ function roundEndState() {
   };
 }
 
+describe("voz en iOS ?v=3: desbloqueo verificado y recuperación", () => {
+  it("si el desbloqueo silencioso no cuenta, el anuncio no se pierde: el siguiente gesto lo reintenta audible", async () => {
+    // Variante del stub: WebKit descarta el utterance a volumen 0 incluso
+    // dentro de un gesto (hipótesis: el desbloqueo silencioso no vale).
+    // ?v=2 ponía voiceUnlocked = true sin verificar y perdía el anuncio;
+    // ?v=3 no desbloquea hasta ver onstart y reintenta audible.
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0, dropSilentUnlock: true });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+
+    // Primer gesto con la cola vacía: el desbloqueo silencioso se descarta.
+    ios.setGesture(true);
+    try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
+    await sleep(200);
+    assert.equal(BASTA.isVoiceUnlocked(), false, "?v=3 no debe dar por hecho el desbloqueo sin onstart");
+    assert.deepEqual(audible(ios), [], "el desbloqueo silencioso descartado no debe sonar");
+
+    // Llega el anuncio de fin de ronda (fuera de gesto): ?v=3 lo encola
+    // SIN intentarlo (no se descarta, no se pierde).
+    BASTA.renderState(roundEndState());
+    await sleep(2000);
+    assert.deepEqual(audible(ios), [], "sin desbloqueo verificado no debe sonar todavía");
+    assert.equal(BASTA.isVoiceUnlocked(), false);
+
+    // Segundo gesto: el desbloqueo se reintenta AUDIBLE y arranca.
+    ios.setGesture(true);
+    try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
+    await sleep(4000);
+    assert.equal(BASTA.isVoiceUnlocked(), true, "el reintento audible debe verificar el desbloqueo");
+    const said = audible(ios).join(" ");
+    assert.ok(said.includes("El ganador de la ronda es Tato, con 750 puntos."), `debió decir al ganador, dijo: ${said}`);
+    assert.ok(said.includes("En segundo lugar, Milly, con 600 puntos."), `debió decir el 2º, dijo: ${said}`);
+    assert.ok(said.includes("En tercer lugar, Ledya, con 450 puntos."), `debió decir el 3º, dijo: ${said}`);
+  });
+
+  it("si un speak fuera de gesto deja la cola atorada, el código nuevo no habla antes de desbloquear y se recupera", async () => {
+    // Variante del stub: un speak() fuera de gesto queda COLGADO como
+    // utterance actual (speaking=true sin eventos) y bloquea la cola
+    // hasta cancel(). ?v=2 intentaba el anuncio antes del primer gesto
+    // y se atoraba; ?v=3 no habla sin desbloqueo verificado.
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0, stuckOutsideGesture: true });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+
+    // El anuncio llega antes de cualquier gesto: ?v=3 lo encola sin
+    // intentarlo, así que nada queda colgado en el motor.
+    BASTA.renderState(roundEndState());
+    await sleep(500);
+    assert.equal(ios.synth.speaking, false, "sin desbloqueo no debe haber nada sonando ni colgado");
+    assert.deepEqual(audible(ios), [], "sin gesto no debe sonar nada todavía");
+
+    // Primer gesto: desbloquea y la cola se vacía con el anuncio completo.
+    ios.setGesture(true);
+    try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
+    await sleep(4000);
+    const said = audible(ios).join(" ");
+    assert.ok(said.includes("El ganador de la ronda es Tato, con 750 puntos."), `debió decir al ganador, dijo: ${said}`);
+    assert.ok(said.includes("En segundo lugar, Milly, con 600 puntos."), `debió decir el 2º, dijo: ${said}`);
+    assert.ok(said.includes("En tercer lugar, Ledya, con 450 puntos."), `debió decir el 3º, dijo: ${said}`);
+  });
+
+  it("'Probar voz' muestra éxito cuando la voz responde y fallo cuando no responde", async () => {
+    // Éxito: con voces y gesto, el ejemplo suena y el estado es "ok".
+    const iosOk = makeIOSSPEECH({ voicesDelayMs: 0 });
+    iosOk.loadVoices();
+    const appOk = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: iosOk });
+    const btnOk = appOk.__els__.voiceTestBtn;
+    iosOk.setGesture(true);
+    try { btnOk._listeners.click[0](); } finally { iosOk.setGesture(false); }
+    await sleep(2500);
+    assert.equal(appOk.__BASTA__.voiceStatus(), "ok", "con voz funcionando el estado debe ser ok");
+    assert.ok((appOk.__els__.voiceStatus.textContent || "").includes("funcionando"), "la pantalla debe decir que la voz funciona");
+
+    // Fallo: el desbloqueo silencioso se descarta y no hay segundo gesto.
+    const iosBad = makeIOSSPEECH({ voicesDelayMs: 0, dropSilentUnlock: true });
+    iosBad.loadVoices();
+    const appBad = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: iosBad });
+    const btnBad = appBad.__els__.voiceTestBtn;
+    iosBad.setGesture(true);
+    try { btnBad._listeners.click[0](); } finally { iosBad.setGesture(false); }
+    await sleep(4500);
+    assert.equal(appBad.__BASTA__.voiceStatus(), "blocked", "si la voz no responde el estado debe ser blocked");
+    assert.ok((appBad.__els__.voiceStatus.textContent || "").includes("no respondió"), "la pantalla debe avisar que la voz no respondió");
+  });
+});
 describe("voz en iOS: desbloqueo por gesto y cola con reintento", () => {
   it("el anuncio de fin de ronda no se pierde si llega antes del primer gesto: se dice tras el tap", async () => {
     const ios = makeIOSSPEECH({ voicesDelayMs: 0 });

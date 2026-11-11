@@ -64,6 +64,19 @@ body {
 .warning code { color: var(--gold-soft); }
 .warning a { color: var(--gold); font-weight: 800; }
 
+/* Banner de versión nueva: si el servidor ya sirve una versión mayor
+ * que la cargada (pestaña vieja cacheada), avisar y recargar. */
+.update-banner {
+  background: #0a2e6b; border: 2px solid #4da3ff; color: #d6e9ff;
+  border-radius: var(--radius); padding: 12px 14px; margin: 6px 0 12px;
+  font-size: 15px; line-height: 1.45; text-align: center;
+}
+.update-banner button {
+  background: var(--gold); color: #241300; border: 0; border-radius: 10px;
+  font-weight: 800; font-size: 15px; padding: 8px 14px; margin-left: 8px;
+  cursor: pointer;
+}
+
 /* ---------- Marcador ---------- */
 .players { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (min-width: 560px) { .players { grid-template-columns: 1fr 1fr 1fr; } }

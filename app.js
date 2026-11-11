@@ -276,36 +276,61 @@ function pickSpanishVoice() {
 
 /* --- Desbloqueo y cola de voz (clave en iOS/Safari) -------------------- */
 /*
- * CAUSA RAÍZ DEL FALLO DE VOZ (verificado en vivo contra el Worker con
- * un stub estilo iOS): en Safari de iPhone, WebKit descarta EN SILENCIO
- * (sin evento ni error) todo speak() que NO corre sincrónicamente dentro
- * de un gesto del usuario (tap/click). En Basta TODOS los anuncios se
- * disparaban por mensajes del servidor (ruleta, cuenta atrás, fin de
- * ronda, podio), nunca dentro de un gesto, así que NINGUNO sonaba: ni la
- * letra, ni el podio, ni el ganador. El único gesto que existía (un
- * pointerdown de un solo uso en init) solo desbloqueaba el AudioContext,
- * nunca speechSynthesis. Por eso el texto del anuncio se construía bien
- * (el servidor manda roundWinner/roundPoints) pero no se oía nada.
+ * CAUSA RAÍZ DEL FALLO DE VOZ (revisión ?v=3, 2026-11-11):
  *
- * El arreglo tiene 4 partes:
- *  1. unlockVoice(): en CADA gesto del usuario (pointerdown/touchstart)
- *     se hace resume() y un speak() silencioso (volumen 0) DENTRO del
- *     gesto, que es lo que desbloquea la voz en iOS para el resto de la
- *     sesión. También se reintenta en cada gesto hasta que haya voces.
- *  2. Cola con watchdog: los anuncios se encolan y se dicen de uno en
- *     uno. Si un utterance se descarta en silencio (no llega onstart),
- *     el watchdog lo detecta, no se pierde el texto: se reencola para
- *     decirlo tras el próximo desbloqueo por gesto.
- *  3. Espera de voces: si getVoices() aún está vacío se espera a
- *     `voiceschanged` (con límite) antes de hablar.
- *  4. Las frases largas se parten en oraciones: en iOS los textos de
- *     ~15 s se cortan; el anuncio de fin de ronda se dice en 2-3 partes.
+ * 1) CACHÉ (causa principal, con evidencia de línea de tiempo): la
+ *    partida en la que Tato reportó "no sale la voz" (sala HFTY,
+ *    06:58–07:01 UTC) empezó ~5 minutos después de publicarse ?v=2
+ *    (commit 8712b70c, 06:52 UTC) en una pestaña de Safari abierta
+ *    desde ~06:31 con ?v=1, sin recarga forzada. GitHub Pages sirve
+ *    index.html con max-age=600 y sin service worker, así que esa
+ *    pestaña vieja siguió sirviendo ?v=1, que NO tiene unlockVoice ni
+ *    "Probar voz". Por eso no sonó NADA: ni la letra, ni el podio.
+ *    Remedio: ?v=3 + version.json con chequeo de versión en vivo y
+ *    banner "Hay una versión nueva — Actualizar ahora" (recarga).
+ *
+ * 2) DEFECTOS DE DISEÑO DE ?v=2 (que hacían el fallo silencioso e
+ *    irrecuperable, y que ?v=3 corrige aunque la caché no fuera la
+ *    causa):
+ *    a. unlockVoice() ponía voiceUnlocked = true INCONDICIONALMENTE
+ *       tras speak(), sin verificar que el utterance arrancara
+ *       (onstart). Si WebKit descartaba el utterance silencioso, la
+ *       app creía estar desbloqueada y los anuncios se perdían.
+ *    b. Ningún cancel()/resume() de recuperación: si el primer
+ *       utterance quedaba colgado (speaking atorado), bloqueaba la
+ *       cola para siempre (WebKit encola en FIFO).
+ *    c. El desbloqueo era solo silencioso (volumen 0): si WebKit no
+ *       cuenta un utterance silencioso como gesto válido, el
+ *       desbloqueo nunca ocurre. ?v=3 lo intenta silencioso primero
+ *       y, si no arranca, lo reintenta AUDIBLE ("¡Hola!") en el
+ *       siguiente gesto.
+ *    d. "Probar voz" no daba feedback: si la voz fallaba, el usuario
+ *       no veía nada. ?v=3 muestra éxito/fallo en pantalla.
+ *
+ * REGLAS DEL NUEVO DISEÑO (?v=3):
+ *  - voiceUnlocked solo se pone en true cuando un utterance de
+ *    desbloqueo dispara onstart/onend (verificado). Antes de eso,
+ *    los anuncios se quedan en cola y se dicen tras el próximo gesto.
+ *  - Antes de cada speak(): resume() + limpieza de cola atorada
+ *    (cancel() solo si speaking lleva > 2.5 s sin actividad).
+ *  - Watchdog de 1.5 s: sin onstart se limpia la cola atorada y se
+ *    reencola (hasta 2 reintentos); el texto nunca se pierde en
+ *    silencio.
+ *  - Si no hay voces en español o speechSynthesis no responde,
+ *    "Probar voz" lo muestra en pantalla y el juego sigue con
+ *    pitidos de respaldo.
  */
-var voiceUnlocked = false;
+var voiceSupported = (typeof window !== "undefined") && ("speechSynthesis" in window);
+var voiceUnlocked = false;   // true SOLO tras onstart/onend de un utterance de desbloqueo
 var voicesReady = false;
+var voiceStatus = "unknown"; // unknown | ok | blocked | unsupported | no-voices
+var voiceStatusText = "";
 var speechQueue = []; // { text, opts, tries }
 var speechBusy = false;
 var speechWaitingVoices = false;
+var voiceUnlockAttemptedAt = 0;
+var voiceUnlockAudible = false; // el próximo intento de desbloqueo será audible
+var lastSpeechActivityAt = 0;
 
 function refreshVoices() {
   try {
@@ -316,70 +341,109 @@ function refreshVoices() {
   if (spanishVoice) voicesReady = true;
 }
 
-function unlockVoice() {
-  if (!("speechSynthesis" in window)) return;
-  refreshVoices();
-  try { window.speechSynthesis.resume(); } catch (e) {}
-  if (voiceUnlocked) { pumpSpeech(); return; }
-  if (!voicesReady) return; // sin voces aún: reintentar en el próximo gesto
-  try {
-    var u = new SpeechSynthesisUtterance("¡Hola!");
-    u.volume = 0; // silencioso: solo desbloquea, no se oye
-    u.lang = "es-MX";
-    if (spanishVoice) u.voice = spanishVoice;
-    window.speechSynthesis.speak(u);
-    voiceUnlocked = true;
-  } catch (e) {}
-  pumpSpeech();
+function setVoiceStatus(status, text) {
+  voiceStatus = status;
+  if (text) voiceStatusText = text;
+  var el = $("voiceStatus");
+  if (el && text) el.textContent = text;
 }
 
-if (typeof window !== "undefined" && "speechSynthesis" in window) {
+/** Si el motor quedó hablando algo que nunca arrancó (cola atorada),
+ *  limpiarla con cancel(). Solo se hace cuando hay evidencia de atasco
+ *  (speaking sin actividad > 2.5 s): un cancel() gratuito justo antes
+ *  de speak() puede descartar el utterance nuevo en Safari antiguo
+ *  (WebKit bug 191745). */
+function clearStuckSpeech() {
   try {
-    window.speechSynthesis.onvoiceschanged = function () { refreshVoices(); pumpSpeech(); };
-    refreshVoices();
+    var s = window.speechSynthesis;
+    if (!s || !s.speaking) return;
+    if (lastSpeechActivityAt && Date.now() - lastSpeechActivityAt > 2500) {
+      s.cancel();
+      speechBusy = false;
+    }
   } catch (e) {}
+}
+
+/** Desbloqueo de la voz. SOLO se llama desde un gesto del usuario
+ *  (pointerdown/touchstart en document, o click en "¡Listo a jugar!" /
+ *  "Probar voz"). Devuelve true solo si el desbloqueo ya estaba
+ *  verificado; el desbloqueo nuevo se confirma por onstart/onend del
+ *  utterance, nunca aquí. */
+function unlockVoice() {
+  if (!voiceSupported) {
+    setVoiceStatus("unsupported", "⚠️ Este navegador no tiene voz (Web Speech no disponible).");
+    return false;
+  }
+  refreshVoices();
+  try { window.speechSynthesis.resume(); } catch (e) {}
+  if (voiceUnlocked) { pumpSpeech(); return true; }
+  var now = Date.now();
+  if (now - voiceUnlockAttemptedAt < 800) return false;
+  voiceUnlockAttemptedAt = now;
+  clearStuckSpeech();
+  var u;
+  try {
+    // Silencioso primero ("¡Hola!" a volumen 0: patrón estándar de
+    // desbloqueo). Si no arranca, el próximo gesto lo reintenta audible.
+    u = new SpeechSynthesisUtterance("¡Hola!");
+  } catch (e) { return false; }
+  u.lang = "es-MX";
+  if (spanishVoice) u.voice = spanishVoice;
+  u.volume = voiceUnlockAudible ? 1 : 0;
+  u.rate = 1.2;
+  var done = false;
+  u.onstart = function () {
+    if (done) return; done = true;
+    voiceUnlocked = true;
+    setVoiceStatus("ok", "✅ Voz lista.");
+    pumpSpeech();
+  };
+  u.onend = function () {
+    if (done) return; done = true;
+    voiceUnlocked = true;
+    setVoiceStatus("ok", "✅ Voz lista.");
+    pumpSpeech();
+  };
+  u.onerror = function () { /* sin onstart: se reintenta en el próximo gesto */ };
+  setTimeout(function () {
+    if (!done) {
+      // El utterance de desbloqueo no arrancó (WebKit lo descartó).
+      // NO desbloquear; el próximo gesto reintenta, audible.
+      voiceUnlockAudible = true;
+    }
+  }, 1500);
+  lastSpeechActivityAt = now;
+  try { window.speechSynthesis.speak(u); } catch (e) {}
+  return false;
 }
 
 function splitSentences(text) {
-  var parts = String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-  var out = [];
-  for (var i = 0; i < parts.length; i++) {
-    var p = parts[i].trim();
-    if (p) out.push(p);
-  }
-  return out.length ? out : [text];
+  var parts = String(text || "").split(/(?<=[.!?])\s+/);
+  return parts.map(function (p) { return p.trim(); }).filter(Boolean);
 }
 
-/**
- * Habla `text` en español (lang es-MX). Si no hay voz en español o no hay
- * Web Speech API, usa tonos como respaldo (y no rompe el juego).
- * Hace ducking de la música mientras habla. Los textos se encolan y se
- * dicen de uno en uno para que en iOS no se pierdan ni se corten.
- */
 function speak(text, opts) {
-  if (!text || muted) return;
-  ensureAudio();
-  if (!("speechSynthesis" in window)) {
-    playBeep(false);
-    return;
-  }
-  var chunks = splitSentences(text);
-  for (var i = 0; i < chunks.length; i++) {
-    speechQueue.push({ text: chunks[i], opts: opts, tries: 0 });
+  if (!text) return;
+  var parts = splitSentences(text);
+  for (var i = 0; i < parts.length; i++) {
+    speechQueue.push({ text: parts[i], opts: opts || {}, tries: 0 });
   }
   pumpSpeech();
 }
 
+/** Saca el siguiente anuncio de la cola y lo dice. No habla sin
+ *  desbloqueo verificado: en iOS ese speak() sería descartado en
+ *  silencio. La cola espera al próximo gesto (unlockVoice hace pump). */
 function pumpSpeech() {
   if (speechBusy || !speechQueue.length) return;
   if (muted) { speechQueue.length = 0; return; }
-  if (!("speechSynthesis" in window)) { speechQueue.length = 0; playBeep(false); return; }
+  if (!voiceSupported) { speechQueue.length = 0; return; }
+  if (!voiceUnlocked) return;
   if (!voicesReady) {
     refreshVoices();
     if (!voicesReady) {
       if (!speechWaitingVoices) {
         speechWaitingVoices = true;
-        // Esperar a que carguen las voces; si no llegan, hablar igual.
         setTimeout(function () { speechWaitingVoices = false; pumpSpeech(); }, 1200);
       }
       return;
@@ -391,72 +455,58 @@ function pumpSpeech() {
 
 function speakNow(item) {
   try { window.speechSynthesis.resume(); } catch (e) {}
+  clearStuckSpeech();
   var u;
-  try {
-    u = new SpeechSynthesisUtterance(item.text);
-  } catch (e) { finishSpeech(item, true); return; }
+  try { u = new SpeechSynthesisUtterance(item.text); } catch (e) { finishSpeech(item, true, false); return; }
   u.lang = "es-MX";
   if (spanishVoice) u.voice = spanishVoice;
   u.rate = (item.opts && item.opts.rate) || 1.05;
   u.pitch = (item.opts && item.opts.pitch) || 1.1;
-  u.volume = 1; // voz fuerte: 5/5
-  var done = false;
-  var started = false;
-  var finish = function (ok) { finishSpeech(item, ok, started); };
-  var finishOnce = function (ok) {
+  u.volume = 1;
+  var done = false, started = false;
+  var finishOnce = function (ok) { if (done) return; done = true; finishSpeech(item, ok, started); };
+  u.onstart = function () {
     if (done) return;
-    done = true;
-    finish(ok);
+    started = true;
+    lastSpeechActivityAt = Date.now();
+    speechActive++;
+    duckMusic(true);
+    if (item.opts && item.opts.onstart) { try { item.opts.onstart(); } catch (e) {} }
   };
-  u.onstart = function () { if (done) return; started = true; speechActive++; duckMusic(true); };
-  u.onend = function () { finishOnce(true); };
-  u.onerror = function (ev) {
-    // "not-allowed" = sin activación de usuario (iOS): reencolar.
-    finishOnce(!(ev && ev.error === "not-allowed"));
-  };
-  // Watchdog 1: si no arranca (descarte silencioso en iOS, sin evento),
-  // no dejar la cola atorada: marcarlo como fallido.
-  setTimeout(function () { if (!done && !started) finishOnce(false); }, 1500);
-  // Watchdog 2: si arranca pero nunca llega onend, cerrar igual.
+  u.onend = function () { lastSpeechActivityAt = Date.now(); finishOnce(true); };
+  u.onerror = function (ev) { lastSpeechActivityAt = Date.now(); finishOnce(!(ev && ev.error === "not-allowed")); };
+  setTimeout(function () { if (!done && !started) { clearStuckSpeech(); finishOnce(false); } }, 1500);
   setTimeout(function () { if (!done) finishOnce(true); }, Math.max(6000, item.text.length * 200 + 6000));
-  try {
-    window.speechSynthesis.speak(u);
-  } catch (e) {
-    finishOnce(false);
-  }
+  lastSpeechActivityAt = Date.now();
+  try { window.speechSynthesis.speak(u); } catch (e) { finishOnce(false); }
 }
 
-/* Cierra el utterance en curso: lo quita de la cola; si falló por falta
- * de desbloqueo, se reencola UNA vez para decirlo tras el próximo gesto. */
 function finishSpeech(item, ok, started) {
   speechActive = Math.max(0, speechActive - 1);
   if (speechActive === 0) duckMusic(false);
   speechBusy = false;
   if (speechQueue.length && speechQueue[0] === item) speechQueue.shift();
-  if (!ok && !started && item.tries < 1) {
+  if (!ok && !started && item.tries < 2) {
     item.tries++;
     speechQueue.unshift(item);
-    // Si el desbloqueo por gesto ya llegó mientras el utterance estaba
-    // pendiente, reintentar ahora; si no, esperar al próximo gesto.
-    if (voiceUnlocked) pumpSpeech();
-    return; // si no, esperar al próximo gesto (unlockVoice hace pumpSpeech)
+    pumpSpeech(); // si no hay desbloqueo verificado, la cola espera al próximo gesto
+    return;
   }
+  if (!ok && item.opts && item.opts.onfail) { try { item.opts.onfail(); } catch (e) {} }
   if (speechQueue.length) pumpSpeech();
 }
 
 function stopSpeaking() {
-  try {
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-  } catch (e) {}
-  speechQueue.length = 0;
-  speechBusy = false;
+  try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
   speechActive = 0;
+  speechBusy = false;
   duckMusic(false);
 }
 
 /** Prueba de voz desde el lobby: quita el silencio si estaba puesto,
  *  desbloquea la voz dentro del gesto (tap) y dice un ejemplo del
- *  anuncio de fin de ronda, para probarla sin jugar una ronda entera. */
+ *  anuncio de fin de ronda, para probarla sin jugar una ronda entera.
+ *  Muestra en pantalla si funcionó o si falló (y qué revisar). */
 function testVoice() {
   ensureAudio();
   if (muted) {
@@ -467,8 +517,52 @@ function testVoice() {
     updateSoundBtn();
   }
   unlockVoice(); // dentro del gesto: desbloquea la voz en iOS
-  speak("El ganador de la ronda es Tato, con 900 puntos. En segundo lugar, Milly, con 600 puntos.");
-  toast("🔊 Probando la voz… Si no se escucha, revisa el interruptor de silencio de tu iPhone y el volumen.");
+  var said = false;
+  speak("El ganador de la ronda es Tato, con 900 puntos. En segundo lugar, Milly, con 600 puntos.", {
+    onstart: function () {
+      said = true;
+      setVoiceStatus("ok", "✅ Voz funcionando: se escuchó el ejemplo.");
+    },
+    onfail: function () {
+      setVoiceStatus("blocked", "⚠️ La voz no se escuchó. Revisa el interruptor de silencio de tu iPhone y el volumen.");
+    }
+  });
+  toast("🔊 Probando la voz…");
+  setTimeout(function () {
+    if (!said && voiceStatus !== "ok") {
+      setVoiceStatus("blocked", "⚠️ La voz no respondió. Toca de nuevo \"Probar voz\" o revisa el interruptor de silencio de tu iPhone y el volumen.");
+    }
+  }, 4000);
+}
+
+/* --- Versión de la app y aviso de actualización ---------------------- */
+/* GitHub Pages puede servir index.html cacheado (max-age=600) y una
+ * pestaña vieja de Safari seguiría corriendo ?v=2 aunque ya exista ?v=3.
+ * version.json se pide con anti-caché; si el servidor reporta una
+ * versión mayor que APP_VERSION, se muestra un banner con botón de
+ * recarga. Así el usuario nunca juega sin saber que hay una versión
+ * nueva (esto es lo que pasó con ?v=2 en la sala HFTY). */
+var APP_VERSION = 3;
+
+function checkAppVersion() {
+  try {
+    fetch("version.json?nocache=" + Date.now())
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && typeof data.version === "number" && data.version > APP_VERSION) {
+          showUpdateBanner();
+        }
+      })
+      .catch(function () {});
+  } catch (e) {}
+}
+
+function showUpdateBanner() {
+  var b = $("updateBanner");
+  if (!b) return;
+  b.hidden = false;
+  var btn = $("updateBtn");
+  if (btn) btn.addEventListener("click", function () { window.location.reload(); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1085,7 +1179,7 @@ function renderLobby(state) {
     (code ? '<div class="lobby-code-big">' + esc(code) + '</div><p class="share-note">Comparte este código con tus amigos para que se unan (de 2 a 6 jugadores). En cuanto entre el 2º jugador, todos se ponen listos… ¡y arranca la ruleta!</p>' : "") +
     (players.length === 1 ? '<p class="share-note"><b>' + esc(players[0].name) + '</b> ya está en la sala. Esperando a alguien más…</p>' : "") +
     '<button type="button" class="btn btn-ghost" id="voiceTestBtn" style="width:100%;margin-top:12px">🔊 Probar voz</button>' +
-    '<p class="share-note">Toca “Probar voz” para oír un ejemplo del anuncio de fin de ronda sin jugar. Si no se escucha, revisa el interruptor de silencio de tu iPhone y el volumen.</p>' +
+    '<p id="voiceStatus" class="share-note">' + esc(voiceStatusText || "Toca “Probar voz” para oír un ejemplo del anuncio de fin de ronda sin jugar. Si no se escucha, revisa el interruptor de silencio de tu iPhone y el volumen.") + '</p>' +
     '</div>';
 
   var vt = $("voiceTestBtn");
@@ -1273,15 +1367,29 @@ function renderRoundEnd(state) {
       '<span class="rp">' + (state.roundPoints[p.id] || 0) + ' pts · total ' + (p.score || 0) + '</span></div>' +
       '<div class="result-rows">' + rows + bonusRow + '</div></div>';
   }).join("");
+  // Puerta de "Continuar": la siguiente ronda (o el podio final) solo
+  // arranca cuando TODOS los jugadores han tocado Continuar, como la
+  // puerta de "¡Listo a jugar!" al inicio. Sin límite de tiempo.
+  var iContinued = me(state) ? !!me(state).continued : false;
+  var isLastRound = state.round >= state.totalRounds;
+  var contRows = (state.players || []).map(function (p) {
+    return '<div class="ready-row' + (p.continued ? " is-ready" : "") + '"><span>' + esc(p.name) + (p.id === myId ? " (tú)" : "") + '</span>' +
+      '<span class="' + (p.continued ? "st-yes" : "st-no") + '">' + (p.continued ? "✅ Continuar" : "⏳ Esperando…") + '</span></div>';
+  }).join("");
   stage.innerHTML = '<div class="phase-title">🏁 FIN DE LA RONDA ' + (state.round || 1) + '</div>' +
     (bastaName ? '<p class="phase-sub">🛑 ¡BASTA! lo cantó <b>' + esc(bastaName) + '</b></p>' : "") +
     (winner ? '<div class="big-name">' + esc(winner.name) + '</div>' +
       '<p class="phase-sub">🏆 Gana la ronda con <b>' + winnerPts + ' puntos</b></p>' : "") +
     '<div class="results">' + cards + '</div>' +
-    '<div class="btn-row"><button class="btn" id="nextBtn">' +
-    (state.round < state.totalRounds ? "➡️ Siguiente ronda" : "🏆 Ver el podio final") + '</button></div>';
-  var btn = $("nextBtn");
-  if (btn) btn.addEventListener("click", function () { send({ type: "next" }); });
+    '<p class="phase-sub">La siguiente ronda empieza solo cuando <b>TODOS</b> toquen <b>“Continuar”</b>.</p>' +
+    '<div class="ready-list">' + contRows + '</div>' +
+    '<div class="btn-row"><button class="btn" id="continueBtn" ' + (iContinued ? "disabled" : "") + '>' +
+    (iContinued ? "✅ ¡Listo para continuar! Esperando a los demás…" : (isLastRound ? "🏆 Ver el podio final" : "➡️ Continuar")) + '</button></div>';
+  var btn = $("continueBtn");
+  if (btn) btn.addEventListener("click", function () {
+    btn.disabled = true;
+    send({ type: "continue" });
+  });
 }
 
 function renderGameOver(state) {
@@ -1377,9 +1485,9 @@ function demoStates() {
     roundWinner: null, roundPoints: {}, frozenPoints: null, results: null,
     winner: null, podium: [], deadline: null,
     players: [
-      { id: "p1", name: "Tato", score: 750, ready: true },
-      { id: "p2", name: "Milly", score: 600, ready: true },
-      { id: "p3", name: "Ledya", score: 450, ready: false }
+      { id: "p1", name: "Tato", score: 750, ready: true, continued: false },
+      { id: "p2", name: "Milly", score: 600, ready: true, continued: false },
+      { id: "p3", name: "Ledya", score: 450, ready: false, continued: false }
     ]
   };
   var fullAnswers = {
@@ -1499,6 +1607,8 @@ function toggleMute() {
 
 function init() {
   updateSoundBtn();
+  checkAppVersion(); // si hay versión nueva en el servidor, avisar con banner
+  document.addEventListener("pageshow", function () { checkAppVersion(); });
   var sb = $("soundBtn");
   if (sb) sb.addEventListener("click", function () { ensureAudio(); toggleMute(); });
   // Desbloquear el audio y la voz en iOS con cada toque: en Safari los
@@ -1543,5 +1653,10 @@ window.__BASTA__ = {
   testVoice: testVoice,
   unlockVoice: unlockVoice,
   playApplause: playApplause,
-  playFireworksSound: playFireworksSound
+  playFireworksSound: playFireworksSound,
+  appVersion: APP_VERSION,
+  checkAppVersion: checkAppVersion,
+  voiceStatus: function () { return voiceStatus; },
+  isVoiceUnlocked: function () { return voiceUnlocked; }
 };
+

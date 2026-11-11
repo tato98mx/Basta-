@@ -14,8 +14,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Montserrat:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2">
-<script src="config.js?v=2"></script>
+<link rel="stylesheet" href="style.css?v=3">
+<script src="config.js?v=3"></script>
 </head>
 <body>
 <div id="confetti" aria-hidden="true"></div>
@@ -40,6 +40,11 @@
     <a href="?demo=1">?demo=1</a>.
   </div>
 
+  <div id="updateBanner" class="update-banner" hidden>
+    🆕 <b>Hay una versión nueva del juego.</b>
+    <button id="updateBtn" type="button">Actualizar ahora</button>
+  </div>
+
   <section id="scoreboard" aria-label="Marcador">
     <div id="players" class="players"></div>
     <div id="roundInfo" class="round-info" hidden></div>
@@ -58,12 +63,12 @@
   </div>
 
   <footer class="footer">
-    2 a 6 jugadores · 9 categorías · ¡BASTA! con las 9 llenas · 100 pts única, 50 repetida, 0 inválida · A los 3 min la ronda se congela y hay categoría bonus
+    2 a 6 jugadores · 9 categorías · ¡BASTA! con las 9 llenas · 100 pts única, 50 repetida, 0 inválida · A los 3 min la ronda se congela y hay categoría bonus · v3
   </footer>
 </div>
 
 <button id="soundBtn" class="sound-btn" type="button" aria-label="Sonido" title="Sonido">🔊</button>
 
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

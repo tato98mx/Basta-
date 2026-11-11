@@ -90,8 +90,13 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
 ### Fin de ronda y podio
 - Al cerrar la ronda se muestra el ganador de la ronda **EN GRANDE** con
   sus puntos, la tabla completa (palabra, puntos y motivo de cada jugador
-  en cada categoría, incluido el bonus si lo hubo) y el botón para la
-  siguiente ronda. Empate en puntos de ronda: gana quien cantó ¡BASTA!.
+  en cada categoría, incluido el bonus si lo hubo) y el botón **"➡️
+  Continuar"** (en la última ronda: **"🏆 Ver el podio final"**). La
+  siguiente ronda (o el podio final) **NO empieza hasta que TODOS los
+  jugadores toquen Continuar**: cada uno ve quién ya tocó y quién falta,
+  como la puerta de "¡Listo a jugar!". Si alguien no lo toca, la partida
+  espera sin límite de tiempo. Empate en puntos de ronda: gana quien
+  cantó ¡BASTA!.
 - Al terminar la última ronda: **podio** (1º, 2º y 3º con medallas 🥇🥈🥉,
   y el resto en lista) con botón de **revancha**. La revancha **NO pasa
   por "ready"**: arranca directo en la ruleta de la ronda 1, con el
@@ -122,7 +127,12 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
 - `{type:"bonus", answer}` — borrador de la palabra bonus.
 - `{type:"basta", answers?, bonusAnswer?}` — cantar ¡BASTA!; puede llevar
   las respuestas finales para no perder ni una letra.
-- `{type:"next"}` — avanzar de fin de ronda a la siguiente (o al podio).
+- `{type:"continue"}` — tocar "Continuar" en fin de ronda. El servidor
+  marca al jugador como listo-para-continuar y solo avanza a la siguiente
+  ronda (o al podio final) cuando **TODOS** los jugadores actuales lo han
+  tocado. Sin límite de tiempo.
+- `{type:"next"}` — alias de compatibilidad para clientes ?v=2: se trata
+  como `"continue"` (marca al jugador, no avanza solo).
 - `{type:"rematch"}` — nueva partida en la misma sala (sin ready).
 - `{type:"ping"}` — sin efecto; fuerza al servidor a aplicar temporizadores.
 
@@ -137,7 +147,7 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
 {
   "code": "ABCD",
   "phase": "lobby|ready|roulette|countdown|writing|grace|bonus|roundEnd|gameOver",
-  "players": [{"id": "p1", "name": "Tato", "score": 0, "ready": true}],
+  "players": [{"id": "p1", "name": "Tato", "score": 0, "ready": true, "continued": false}],
   "totalRounds": 5, "round": 1, "letter": "R", "usedLetters": ["R"],
   "categories": [{"id": "nombre", "label": "Nombre"}],
   "bonusCategory": "superheroe",
@@ -199,21 +209,51 @@ jugador y le manda el estado actual **directo a ese socket**.
 - **Desbloqueo en iOS (¡importante!):** en Safari de iPhone, WebKit
   descarta EN SILENCIO todo `speak()` que no corre dentro de un gesto
   del usuario. Por eso `unlockVoice()` corre en CADA `pointerdown` /
-  `touchstart`: hace `resume()` y un `speak()` silencioso (volumen 0)
-  dentro del gesto, que desbloquea la voz para el resto de la sesión.
-  Sin esto, NINGÚN anuncio sonaba (ni la letra, ni el podio).
+  `touchstart`: hace `resume()` y un `speak()` dentro del gesto, que es
+  lo que desbloquea la voz para el resto de la sesión. Sin esto,
+  NINGÚN anuncio sonaba (ni la letra, ni el podio).
+- **Causa raíz del fallo de voz (?v=3, 2026-11-11):** la partida en la
+  que Tato reportó "no sale la voz" (sala HFTY, 06:58–07:01 UTC) empezó
+  ~5 minutos después de publicarse ?v=2 (06:52 UTC) en una pestaña de
+  Safari abierta desde ~06:31 con ?v=1, sin recarga forzada. GitHub
+  Pages sirve index.html con `max-age=600` y sin service worker, así
+  que esa pestaña vieja siguió sirviendo ?v=1, que NO tiene unlockVoice
+  ni "Probar voz". Por eso no sonó NADA. Además ?v=2 tenía defectos que
+  hacían el fallo silencioso e irrecuperable: `unlockVoice()` ponía
+  `voiceUnlocked = true` INCONDICIONALMENTE tras `speak()`, sin
+  verificar `onstart`; ningún `cancel()`/`resume()` de recuperación si
+  la cola se atoraba; y "Probar voz" no daba feedback de éxito/fallo.
+- **Diseño ?v=3:** `voiceUnlocked` solo se pone en `true` cuando un
+  utterance de desbloqueo dispara `onstart`/`onend` (verificado). Antes
+  de eso, los anuncios se quedan en cola y se dicen tras el próximo
+  gesto (nunca se intentan sin desbloqueo, así que no se descartan ni
+  se pierden). El desbloqueo se intenta silencioso primero ("¡Hola!",
+  volumen 0) y, si no arranca en 1.5 s, el próximo gesto lo reintenta
+  AUDIBLE. Antes de cada `speak()`: `resume()` + limpieza de cola
+  atorada (`cancel()` solo si `speaking` lleva > 2.5 s sin actividad,
+  para no descartar el utterance nuevo en Safari antiguo). Watchdog de
+  1.5 s sin `onstart`: se limpia la cola atorada y se reencola (hasta
+  2 reintentos).
+- **Anti-caché:** los assets llevan `?v=3` y la app pide
+  `version.json` con anti-caché al arrancar (y al volver a la pestaña);
+  si el servidor reporta una versión mayor que `APP_VERSION`, aparece
+  un banner "Hay una versión nueva — Actualizar ahora" que recarga la
+  página. Así una pestaña vieja nunca juega sin saber que hay versión
+  nueva (esto es lo que pasó con ?v=2 en la sala HFTY).
 - **Cola de voz con watchdog:** los anuncios se encolan y se dicen de uno
   en uno. Si un utterance se descarta en silencio (no llega `onstart`),
-  el watchdog (1.5 s) lo detecta y el texto se reencola UNA vez para
-  decirlo tras el próximo desbloqueo por gesto, en vez de perderse.
+  el watchdog (1.5 s) lo detecta y el texto se reencola hasta 2 veces
+  para decirlo tras el próximo desbloqueo por gesto, en vez de perderse.
   Si las voces aún no cargaron (`getVoices()` vacío), se espera a
   `voiceschanged` (con límite de 1.2 s) antes de hablar. Las frases
   largas se parten en oraciones (en iOS los textos de ~15 s se cortan).
 - **Botón "🔊 Probar voz" en el lobby:** quita el silencio si estaba
   puesto, desbloquea la voz dentro del tap y dice un ejemplo del anuncio
   de fin de ronda ("El ganador de la ronda es Tato, con 900 puntos…"),
-  para probarla sin jugar una ronda entera. Si no se escucha, avisa que
-  se revise el interruptor de silencio del iPhone y el volumen.
+  para probarla sin jugar una ronda entera. Muestra en pantalla si
+  funcionó ("✅ Voz funcionando") o si falló ("⚠️ La voz no respondió.
+  Toca de nuevo o revisa el interruptor de silencio de tu iPhone y el
+  volumen.").
 - **Secuencia al arrancar cada ronda:** anuncio de la ronda
   ("¡Ronda 1!") + anuncio de la letra ("¡La letra es R!") + cuenta atrás
   3-2-1 con voz ("Tres", "Dos", "Uno").
@@ -222,7 +262,7 @@ jugador y le manda el estado actual **directo a ese socket**.
 
 ```
 /index.html, /app.js, /style.css, /config.js   (frontend, GitHub Pages)
-/manifest.json
+/manifest.json, /version.json                  (versión anti-caché ?v=3)
 /gen_dict.py                                   (generador del diccionario)
 /worker/wrangler.toml                          (Worker "basta" + RoomDO)
 /worker/package.json, /worker/tsconfig.json
@@ -279,7 +319,20 @@ Con 2 jugadores:
   de estados simulados del servidor y verifica nombres, orden y puntos,
   incluido el caso de 2 jugadores (solo se anuncian 2) y el caso en que
   el ganador de la ronda también lleva el mayor total (no se repite).
+  También verifica el botón "➡️ Continuar" en fin de ronda (y "🏆 Ver
+  el podio final" en la última) y el banner de versión nueva (?v=3).
+- `tests-client/voice.test.cjs`: voz en iOS con un stub fiel de
+  speechSynthesis (cola FIFO, descarte fuera de gesto, voces tardías).
+  Tres pruebas nuevas ?v=3 fallan con el código ?v=2 y pasan con ?v=3:
+  desbloqueo silencioso descartado (reintento audible), cola atorada
+  por un speak fuera de gesto, y feedback visible de "Probar voz".
+  Verificación manual contra ?v=2 en `/tmp/verify_old_voice.cjs`.
+- `worker/tests/logic.test.mjs`: 41 tests, incluidos 5 de la puerta de
+  Continuar (no avanza con 1 de 2, avanza con los 2, última ronda →
+  podio, fuera de roundEnd falla, repetir no sustituye al otro).
 - `worker/tests/e2e-local.mjs`: verifica el texto del anuncio con el
-  estado REAL del servidor tras cada ronda y al final de la partida.
-- La verificación en vivo contra la URL pública queda pendiente (el repo
-  aún no existe); todo se verificó en local.
+  estado REAL del servidor tras cada ronda y al final de la partida, y
+  la puerta de Continuar (con solo 1 no avanza; con los 2 sí).
+- Verificación en vivo: partida real de 2 jugadores en
+  https://tato98mx.github.io/Basta-/ contra el Worker en vivo
+  (voz con onstart + puerta Continuar), 2026-11-11.

@@ -78,6 +78,8 @@ export interface PlayerState {
   name: string;
   score: number;
   ready: boolean;
+  /** Tocó "Continuar" en fin de ronda (puerta entre rondas). */
+  continued: boolean;
 }
 
 export interface JudgedAnswer {
@@ -343,7 +345,7 @@ export function addPlayer(state: GameState, name: string): string | null {
   if (!clean) return null;
   if (state.players.length >= MAX_PLAYERS) return null;
   const id = `p${state.players.length + 1}`;
-  state.players.push({ id, name: clean, score: 0, ready: false });
+  state.players.push({ id, name: clean, score: 0, ready: false, continued: false });
   state.answers[id] = {};
   state.bonusAnswers[id] = "";
   return id;
@@ -386,6 +388,8 @@ function beginRound(state: GameState, now: number, rng: Rng): void {
   state.roundPoints = {};
   state.results = null;
   state.frozenPoints = null;
+  // Nueva ronda: nadie ha tocado "Continuar" todavía.
+  for (const p of state.players) p.continued = false;
   state.phase = "roulette";
   state.deadline = now + ROULETTE_MS;
 }
@@ -420,6 +424,25 @@ export function setReady(
   player.ready = true;
   if (state.players.length >= 2 && state.players.every((p) => p.ready)) {
     return startGame(state, opts);
+  }
+  return ok();
+}
+
+/** Un jugador oprime "Continuar" en fin de ronda. Cuando TODOS los
+ *  jugadores actuales lo han tocado, se avanza a la siguiente ronda
+ *  (ruleta) o al podio final si era la última. Sin límite de tiempo:
+ *  si alguien no lo toca, la partida espera. */
+export function setContinue(
+  state: GameState,
+  playerId: string,
+  opts: StartOptions = {},
+): ActionResult {
+  if (state.phase !== "roundEnd") return fail("Ahora no toca continuar.");
+  const player = playerById(state, playerId);
+  if (!player) return fail("Jugador desconocido.");
+  player.continued = true;
+  if (state.players.length >= 2 && state.players.every((p) => p.continued)) {
+    return advance(state, opts);
   }
   return ok();
 }
@@ -520,6 +543,8 @@ function finishRound(
   state.phase = "roundEnd";
   state.deadline = null;
   state.gracePlayer = null;
+  // Fin de ronda: la puerta de "Continuar" empieza en cero.
+  for (const p of state.players) p.continued = false;
 }
 
 /** Puntúa la ronda normal (sin congelamiento): juzga y cierra. */
@@ -843,6 +868,7 @@ export function publicState(state: GameState, viewerId?: string): Record<string,
       name: p.name,
       score: p.score,
       ready: p.ready,
+      continued: p.continued,
     })),
     totalRounds: state.totalRounds,
     round: state.round,

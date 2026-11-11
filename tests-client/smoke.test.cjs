@@ -62,6 +62,55 @@ describe("render de fases (demo)", () => {
   });
 });
 
+describe("aviso de versión nueva (anti-caché ?v=3)", () => {
+  const fetchVersion = (v) => () => Promise.resolve({ json: () => Promise.resolve({ version: v }) });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  it("si el servidor reporta una versión mayor, aparece el banner de actualización", async () => {
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(4) });
+    // El stub El arranca con hidden=false; simular el atributo hidden del HTML
+    // antes de que se resuelva la promesa de checkAppVersion().
+    const banner = app.__doc__.getElementById("updateBanner");
+    banner.hidden = true;
+    await sleep(100);
+    assert.equal(banner.hidden, false, "con versión 4 en el servidor debe aparecer el banner");
+    assert.ok(app.__BASTA__.appVersion === 3, "la app cargada es la v3");
+  });
+
+  it("si el servidor reporta la misma versión, no aparece el banner", async () => {
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(3) });
+    const banner = app.__doc__.getElementById("updateBanner");
+    banner.hidden = true;
+    await sleep(100);
+    assert.equal(banner.hidden, true, "con versión 3 no debe aparecer el banner");
+  });
+});
+
+describe("puerta de Continuar entre rondas (cliente)", () => {
+  it("la pantalla de fin de ronda muestra el botón Continuar y quién falta", () => {
+    const app = loadApp("?demo=1");
+    const end = app.__BASTA__.demoStates().find((d) => d.label.includes("Fin de ronda"));
+    app.__BASTA__.renderState(end.state);
+    const html = stageHtml(app);
+    assert.ok(html.includes("➡️ Continuar"), "debe haber un botón grande Continuar");
+    assert.ok(html.includes("Tato") && html.includes("Esperando"), "debe mostrar quién ya tocó y quién falta");
+    assert.ok(html.includes("TODOS") && html.includes("Continuar"), "debe explicar que la ronda empieza cuando TODOS toquen Continuar");
+    const btn = app.__els__.continueBtn;
+    assert.ok(btn && btn._listeners && btn._listeners.click && btn._listeners.click.length === 1, "el botón Continuar debe tener su handler");
+  });
+
+  it("en la última ronda el botón dice Ver el podio final (misma regla)", () => {
+    const app = loadApp("?demo=1");
+    const end = app.__BASTA__.demoStates().find((d) => d.label.includes("Fin de ronda"));
+    const last = JSON.parse(JSON.stringify(end.state));
+    last.round = last.totalRounds;
+    app.__BASTA__.renderState(last);
+    const html = stageHtml(app);
+    assert.ok(html.includes("🏆 Ver el podio final"), "en la última ronda debe decir Ver el podio final");
+    assert.ok(!html.includes("➡️ Continuar"), "en la última ronda no debe decir Continuar");
+  });
+});
+
 describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => {
   it("formato exacto del ejemplo con 3 jugadores", () => {
     const app = loadApp();
