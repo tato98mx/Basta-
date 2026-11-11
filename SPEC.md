@@ -234,7 +234,7 @@ jugador y le manda el estado actual **directo a ese socket**.
   para no descartar el utterance nuevo en Safari antiguo). Watchdog de
   1.5 s sin `onstart`: se limpia la cola atorada y se reencola (hasta
   2 reintentos).
-- **Anti-caché:** los assets llevan `?v=4` y la app pide
+- **Anti-caché:** los assets llevan `?v=5` y la app pide
   `version.json` con anti-caché al arrancar (y al volver a la pestaña);
   si el servidor reporta una versión mayor que `APP_VERSION`, aparece
   un banner "Hay una versión nueva — Actualizar ahora" que recarga la
@@ -248,6 +248,17 @@ jugador y le manda el estado actual **directo a ese socket**.
   Ahora `onState` fusiona: lo que en local difiere de lo último enviado
   (`lastSyncedDraft`) es un cambio pendiente y gana; lo demás se toma
   del servidor. Lo mismo para la palabra bonus (`lastSyncedBonus`).
+- **Watchdog de voz (?v=5, 2026-11-11):** el watchdog de 1.5 s en
+  `speakNow` reencolaba el utterance siempre que no llegaba `onstart`,
+  aunque el motor estuviera trabajando: con una voz lenta (onstart
+  > 1.5 s, como espeak en Linux o la primera voz tras el desbloqueo en
+  iOS) cada anuncio se decía 3 veces, la cola se atascaba y los
+  anuncios de las rondas siguientes y el podio no llegaban (verificado
+  en vivo en la sala ACQA: ronda 1 sonó, ronda 2 en adelante casi nada,
+  y el anuncio del podio nunca se invocó). Ahora el watchdog mira el
+  estado del motor (`speaking`/`pending`): si está ocupado, espera y
+  vuelve a chequear; solo reencola cuando el motor está en silencio
+  (el utterance fue descartado de verdad).
 - **Cola de voz con watchdog:** los anuncios se encolan y se dicen de uno
   en uno. Si un utterance se descarta en silencio (no llega `onstart`),
   el watchdog (1.5 s) lo detecta y el texto se reencola hasta 2 veces
@@ -270,7 +281,7 @@ jugador y le manda el estado actual **directo a ese socket**.
 
 ```
 /index.html, /app.js, /style.css, /config.js   (frontend, GitHub Pages)
-/manifest.json, /version.json                  (versión anti-caché ?v=4)
+/manifest.json, /version.json                  (versión anti-caché ?v=5)
 /gen_dict.py                                   (generador del diccionario)
 /worker/wrangler.toml                          (Worker "basta" + RoomDO)
 /worker/package.json, /worker/tsconfig.json
@@ -334,7 +345,7 @@ Con 2 jugadores:
   viejos entre medias, y eco con la palabra ya recibida).
 - `tests-client/voice.test.cjs`: voz en iOS con un stub fiel de
   speechSynthesis (cola FIFO, descarte fuera de gesto, voces tardías).
-  Tres pruebas nuevas ?v=3 fallan con el código ?v=2 y pasan con ?v=3:
+  Tres pruebas nuevas ?v=3 fallan con el código ?v=2 y pasan con ?v=3. Una prueba nueva ?v=5 (onstart lento) falla con el código ?v=4 y pasa con ?v=5: el anuncio se dice una sola vez, no tres.
   desbloqueo silencioso descartado (reintento audible), cola atorada
   por un speak fuera de gesto, y feedback visible de "Probar voz".
   Verificación manual contra ?v=2 en `/tmp/verify_old_voice.cjs`.

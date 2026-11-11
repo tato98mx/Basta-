@@ -477,7 +477,27 @@ function speakNow(item) {
   };
   u.onend = function () { lastSpeechActivityAt = Date.now(); finishOnce(true); };
   u.onerror = function (ev) { lastSpeechActivityAt = Date.now(); finishOnce(!(ev && ev.error === "not-allowed")); };
-  setTimeout(function () { if (!done && !started) { clearStuckSpeech(); finishOnce(false); } }, 1500);
+  // Watchdog de arranque: si a los 1.5 s el utterance no arrancó, hay que
+  // distinguir "el motor lo descartó en silencio" (reencolar) de "el motor
+  // está ocupado o la voz tarda en arrancar" (esperar, NO duplicar).
+  // Antes, el watchdog reencolaba siempre a los 1.5 s: con una voz lenta
+  // (espeak en Linux, o la primera voz tras el desbloqueo en iOS) cada
+  // anuncio se decía 3 veces, la cola se atascaba y los anuncios de las
+  // rondas siguientes (y el podio) quedaban esperando detrás. La señal
+  // es el estado del motor: si sigue speaking/pending, el utterance
+  // está vivo en el motor y solo hay que esperar a que arranque.
+  var watchdog = function () {
+    if (done || started) return;
+    var busy = false;
+    try {
+      var s = window.speechSynthesis;
+      busy = !!(s && (s.speaking || s.pending));
+    } catch (e) {}
+    if (busy) { setTimeout(watchdog, 1500); return; }
+    clearStuckSpeech();
+    finishOnce(false);
+  };
+  setTimeout(watchdog, 1500);
   setTimeout(function () { if (!done) finishOnce(true); }, Math.max(6000, item.text.length * 200 + 6000));
   lastSpeechActivityAt = Date.now();
   try { window.speechSynthesis.speak(u); } catch (e) { finishOnce(false); }
@@ -544,7 +564,7 @@ function testVoice() {
  * versión mayor que APP_VERSION, se muestra un banner con botón de
  * recarga. Así el usuario nunca juega sin saber que hay una versión
  * nueva (esto es lo que pasó con ?v=2 en la sala HFTY). */
-var APP_VERSION = 4;
+var APP_VERSION = 5;
 
 function checkAppVersion() {
   try {

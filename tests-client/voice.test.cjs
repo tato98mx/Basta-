@@ -89,6 +89,35 @@ describe("voz en iOS ?v=3: desbloqueo verificado y recuperación", () => {
     assert.ok(said.includes("En tercer lugar, Ledya, con 450 puntos."), `debió decir el 3º, dijo: ${said}`);
   });
 
+  it("si la voz tarda en arrancar (onstart lento), el anuncio se dice UNA sola vez, no tres", async () => {
+    // Regresión del fallo visto en vivo (sala ACQA, 2026-11-11): con una
+    // voz lenta (onstart > 1.5 s, como espeak en Linux o la primera voz
+    // tras el desbloqueo), el watchdog reencolaba el anuncio y cada
+    // texto se decía 3 veces; la cola se atascaba y los anuncios de las
+    // rondas siguientes y el podio no llegaban. El watchdog debe esperar
+    // mientras el motor sigue speaking/pending (el utterance está vivo).
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0, slowStartMs: 2500 });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+
+    // Desbloqueo por gesto (el "¡Hola!" también arranca lento, pero
+    // llega su onstart y verifica el desbloqueo).
+    ios.setGesture(true);
+    try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
+    await sleep(3500);
+    assert.equal(BASTA.isVoiceUnlocked(), true, "el desbloqueo debe verificarse aunque el onstart tarde");
+
+    // Anuncio de fin de ronda (2 frases): debe sonar cada una UNA vez.
+    BASTA.renderState(roundEndState());
+    await sleep(9000);
+    const said = audible(ios);
+    const count = (text) => said.filter((t) => t === text).length;
+    assert.equal(count("El ganador de la ronda es Tato, con 750 puntos."), 1, `el ganador debe decirse 1 vez, se dijo: ${JSON.stringify(said)}`);
+    assert.equal(count("En segundo lugar, Milly, con 600 puntos."), 1, `el 2º debe decirse 1 vez, se dijo: ${JSON.stringify(said)}`);
+    assert.equal(count("En tercer lugar, Ledya, con 450 puntos."), 1, `el 3º debe decirse 1 vez, se dijo: ${JSON.stringify(said)}`);
+  });
+
   it("'Probar voz' muestra éxito cuando la voz responde y fallo cuando no responde", async () => {
     // Éxito: con voces y gesto, el ejemplo suena y el estado es "ok".
     const iosOk = makeIOSSPEECH({ voicesDelayMs: 0 });

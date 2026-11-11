@@ -23,6 +23,11 @@
 //    descartarse, queda COLGADO como utterance actual (speaking=true
 //    para siempre, sin eventos) y bloquea la cola hasta cancel().
 //    Modela el riesgo de "primer utterance colgado bloquea la cola".
+//  - slowStartMs: N → el onstart de cada utterance tarda N ms en
+//    disparar (la voz tarda en arrancar: primera voz tras el desbloqueo,
+//    o motor lento como espeak en Linux). El utterance sigue vivo en el
+//    motor (speaking=true) mientras tanto: el código NO debe reencolarlo
+//    (o el anuncio se diría varias veces y la cola se atascaría).
 //
 // Uso: const ios = makeIOSSPEECH({ voicesDelayMs: 800 });
 //   - ios.setGesture(true) mientras se despacha un tap; luego false.
@@ -47,6 +52,7 @@ function makeIOSSPEECH(opts = {}) {
   const voicesDelayMs = opts.voicesDelayMs == null ? 800 : opts.voicesDelayMs;
   const dropSilentUnlock = !!opts.dropSilentUnlock;
   const stuckOutsideGesture = !!opts.stuckOutsideGesture;
+  const slowStartMs = opts.slowStartMs || 0;
   const VOICES = [
     { name: "Paulina", lang: "es-MX", voiceURI: "com.apple.speech.synthesis.voice.paulina", default: false, localService: true },
     { name: "Mónica", lang: "es-ES", voiceURI: "com.apple.speech.synthesis.voice.monica", default: false, localService: true },
@@ -76,14 +82,14 @@ function makeIOSSPEECH(opts = {}) {
     setTimeout(() => {
       if (current !== u) return; // ya se canceló
       if (typeof u.onstart === "function") { try { u.onstart(); } catch (e) {} }
-    }, 5);
+    }, 5 + slowStartMs);
     setTimeout(() => {
       if (current !== u) return; // ya se canceló
       current = null;
       speaking = false;
       if (typeof u.onend === "function") { try { u.onend(); } catch (e) {} }
       startNext();
-    }, dur);
+    }, Math.max(dur, slowStartMs + 500));
   }
 
   const synth = {
