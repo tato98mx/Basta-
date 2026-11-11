@@ -234,12 +234,20 @@ jugador y le manda el estado actual **directo a ese socket**.
   para no descartar el utterance nuevo en Safari antiguo). Watchdog de
   1.5 s sin `onstart`: se limpia la cola atorada y se reencola (hasta
   2 reintentos).
-- **Anti-caché:** los assets llevan `?v=3` y la app pide
+- **Anti-caché:** los assets llevan `?v=4` y la app pide
   `version.json` con anti-caché al arrancar (y al volver a la pestaña);
   si el servidor reporta una versión mayor que `APP_VERSION`, aparece
   un banner "Hay una versión nueva — Actualizar ahora" que recarga la
   página. Así una pestaña vieja nunca juega sin saber que hay versión
   nueva (esto es lo que pasó con ?v=2 en la sala HFTY).
+- **Borrador local vs eco del servidor (?v=4, 2026-11-11):** `onState`
+  sobrescribía `draft` con `state.myAnswers` a ciegas; como el tecleo
+  tarda 300 ms en sincronizarse, un eco desfasado del servidor borraba
+  palabras ya escritas en local y el contador no llegaba a 9/9 hasta
+  cambiar la palabra (síntoma reportado por Tato en la sala HFTY).
+  Ahora `onState` fusiona: lo que en local difiere de lo último enviado
+  (`lastSyncedDraft`) es un cambio pendiente y gana; lo demás se toma
+  del servidor. Lo mismo para la palabra bonus (`lastSyncedBonus`).
 - **Cola de voz con watchdog:** los anuncios se encolan y se dicen de uno
   en uno. Si un utterance se descarta en silencio (no llega `onstart`),
   el watchdog (1.5 s) lo detecta y el texto se reencola hasta 2 veces
@@ -262,7 +270,7 @@ jugador y le manda el estado actual **directo a ese socket**.
 
 ```
 /index.html, /app.js, /style.css, /config.js   (frontend, GitHub Pages)
-/manifest.json, /version.json                  (versión anti-caché ?v=3)
+/manifest.json, /version.json                  (versión anti-caché ?v=4)
 /gen_dict.py                                   (generador del diccionario)
 /worker/wrangler.toml                          (Worker "basta" + RoomDO)
 /worker/package.json, /worker/tsconfig.json
@@ -320,7 +328,10 @@ Con 2 jugadores:
   incluido el caso de 2 jugadores (solo se anuncian 2) y el caso en que
   el ganador de la ronda también lleva el mayor total (no se repite).
   También verifica el botón "➡️ Continuar" en fin de ronda (y "🏆 Ver
-  el podio final" en la última) y el banner de versión nueva (?v=3).
+  el podio final" en la última), el banner de versión nueva (?v=4) y
+  la carrera del borrador: un eco desfasado del servidor no borra el
+  tecleo local pendiente (3 pruebas: 1 palabra, 9 palabras con ecos
+  viejos entre medias, y eco con la palabra ya recibida).
 - `tests-client/voice.test.cjs`: voz en iOS con un stub fiel de
   speechSynthesis (cola FIFO, descarte fuera de gesto, voces tardías).
   Tres pruebas nuevas ?v=3 fallan con el código ?v=2 y pasan con ?v=3:

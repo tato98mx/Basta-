@@ -59,7 +59,9 @@ var reconnectAttempts = 0;
 var reconnectTimer = null;
 var toastTimer = null;
 var draft = {}; // mis respuestas de la ronda (se sincronizan con el servidor)
+var lastSyncedDraft = {}; // último borrador enviado al servidor (para no pisar tecleo pendiente)
 var draftBonus = "";
+var lastSyncedBonus = ""; // última palabra bonus enviada al servidor
 var answersTimer = null;
 var uiTimer = null;
 var rouletteTimer = null;
@@ -542,7 +544,7 @@ function testVoice() {
  * versión mayor que APP_VERSION, se muestra un banner con botón de
  * recarga. Así el usuario nunca juega sin saber que hay una versión
  * nueva (esto es lo que pasó con ?v=2 en la sala HFTY). */
-var APP_VERSION = 3;
+var APP_VERSION = 4;
 
 function checkAppVersion() {
   try {
@@ -829,7 +831,7 @@ function createRoom() {
       if (!data || !data.code) throw new Error("El servidor no devolvió código de sala.");
       roomCode = String(data.code).toUpperCase();
       myId = "p1"; // quien crea la sala es el primer jugador (el estado lo confirma)
-      draft = {}; draftBonus = "";
+      draft = {}; lastSyncedDraft = {}; draftBonus = ""; lastSyncedBonus = "";
       connectWS(roomCode);
     })
     .catch(function (e) { toast("No se pudo crear la sala: " + e.message, "error"); });
@@ -845,7 +847,7 @@ function joinRoom(code) {
   myName = name;
   roomCode = code;
   myId = null; // lo confirma el estado al entrar
-  draft = {}; draftBonus = "";
+  draft = {}; lastSyncedDraft = {}; draftBonus = ""; lastSyncedBonus = "";
   ensureAudio(); startMusic();
   connectWS(code);
 }
@@ -879,8 +881,23 @@ function onState(state) {
     if (rc) rc.textContent = state.code;
   }
   // Mi borrador: el servidor me devuelve lo que llevo escrito.
-  if (state.myAnswers) draft = Object.assign({}, state.myAnswers);
-  if (typeof state.myBonus === "string") draftBonus = state.myBonus;
+  // NO sobrescribir a ciegas: el eco del servidor puede llegar desfasado
+  // (mi tecleo tarda 300 ms en sincronizarse) y pisaría palabras que ya
+  // escribí en local. Regla: lo que en local difiere de lo último enviado
+  // es un cambio pendiente y gana; lo demás se toma del servidor.
+  if (state.myAnswers) {
+    var merged = {};
+    var cats = state.categories || [];
+    for (var i = 0; i < cats.length; i++) {
+      var id = cats[i].id;
+      if (draft[id] !== undefined && draft[id] !== (lastSyncedDraft[id] || "")) merged[id] = draft[id];
+      else if (state.myAnswers[id] !== undefined) merged[id] = state.myAnswers[id];
+      else if (draft[id] !== undefined) merged[id] = draft[id];
+    }
+    for (var k in draft) if (!(k in merged)) merged[k] = draft[k];
+    draft = merged;
+  }
+  if (typeof state.myBonus === "string" && draftBonus === lastSyncedBonus) draftBonus = state.myBonus;
   render(state);
 }
 
@@ -1052,6 +1069,7 @@ function allDraftFilled() {
 function scheduleAnswersSync() {
   if (answersTimer) clearTimeout(answersTimer);
   answersTimer = setTimeout(function () {
+    lastSyncedDraft = Object.assign({}, draft);
     send({ type: "answers", answers: draft });
   }, 300);
 }
@@ -1125,7 +1143,7 @@ function renderWriting(state) {
       refreshWritingControls(state);
       scheduleAnswersSync();
     });
-    input.addEventListener("change", function () { send({ type: "answers", answers: draft }); });
+    input.addEventListener("change", function () { lastSyncedDraft = Object.assign({}, draft); send({ type: "answers", answers: draft }); });
   });
   var btn = $("bastaBtn");
   if (btn) btn.addEventListener("click", function () {
@@ -1307,9 +1325,9 @@ function renderBonus(state) {
       var b = $("bastaBtn");
       if (b) b.disabled = !draftBonus.trim();
       if (answersTimer) clearTimeout(answersTimer);
-      answersTimer = setTimeout(function () { send({ type: "bonus", answer: draftBonus }); }, 300);
+      answersTimer = setTimeout(function () { lastSyncedBonus = draftBonus; send({ type: "bonus", answer: draftBonus }); }, 300);
     });
-    input.addEventListener("change", function () { send({ type: "bonus", answer: draftBonus }); });
+    input.addEventListener("change", function () { lastSyncedBonus = draftBonus; send({ type: "bonus", answer: draftBonus }); });
     input.focus();
   }
   var btn = $("bastaBtn");
@@ -1422,7 +1440,7 @@ function renderGameOver(state) {
     '<div class="btn-row"><button class="btn btn-ghost" id="leaveBtn">🚪 Salir de la sala</button></div></div>';
   var rb = $("rematchBtn");
   if (rb) rb.addEventListener("click", function () {
-    draft = {}; draftBonus = "";
+    draft = {}; lastSyncedDraft = {}; draftBonus = ""; lastSyncedBonus = "";
     send({ type: "rematch" });
     toast("🔄 ¡Revancha! La ruleta gira otra vez…");
   });
