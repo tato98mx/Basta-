@@ -262,18 +262,71 @@ function duckMusic(on) {
   } catch (e) {}
 }
 
+/** Puntaje de una voz en español (?v=6).
+ *  La voz compacta por defecto suena robótica (la "Siri vieja" que oyó
+ *  Tato); la mejorada suena natural. Orden acordado:
+ *    1) Paulina mejorada es-MX  2) Mónica mejorada es-ES
+ *    3) Paulina compacta        4) Mónica u otra es
+ *  Señales de "mejorada" en el nombre o el voiceURI (en iOS la voz
+ *  mejorada aparece como "Paulina (mejorada)" o con voiceURI
+ *  com.apple.voice.enhanced.*). Tato ya tiene Paulina mejorada
+ *  descargada y seleccionada en Ajustes > Accesibilidad > Lectura y
+ *  voz > Voces (Español México), así que debe ganar siempre que esté
+ *  instalada. */
+function voiceScore(v) {
+  var name = ((v.name || "") + " " + (v.voiceURI || ""));
+  var lang = (v.lang || "").toLowerCase();
+  var score = 0;
+  if (lang.indexOf("es-mx") === 0) score += 100;
+  else if (lang.indexOf("es-es") === 0) score += 80;
+  else if (lang.indexOf("es") === 0) score += 50;
+  else return -1; // no es español
+  if (/paulina/i.test(name)) score += 40;
+  else if (/mónica|monica/i.test(name)) score += 30;
+  if (/enhanced|premium|mejorad|natural|neural/i.test(name)) score += 100;
+  else if (/compact/i.test(name)) score -= 20;
+  return score;
+}
+
 function pickSpanishVoice() {
   try {
     if (!("speechSynthesis" in window)) return null;
     var voices = window.speechSynthesis.getVoices() || [];
-    var es = voices.filter(function (v) { return (v.lang || "").toLowerCase().indexOf("es") === 0; });
-    if (!es.length) return null;
-    var mx = es.filter(function (v) { return (v.lang || "").toLowerCase().indexOf("es-mx") === 0; });
-    if (mx.length) return mx[0];
-    var esEs = es.filter(function (v) { return (v.lang || "").toLowerCase().indexOf("es-es") === 0; });
-    if (esEs.length) return esEs[0];
-    return es[0];
+    var best = null, bestScore = -1;
+    for (var i = 0; i < voices.length; i++) {
+      var sc = voiceScore(voices[i]);
+      if (sc > bestScore) { bestScore = sc; best = voices[i]; }
+    }
+    return best;
   } catch (e) { return null; }
+}
+
+/** Diagnóstico visible de la voz (?v=6): estado del motor, número de
+ *  voces disponibles y nombre de la voz española elegida. Se muestra en
+ *  el lobby ("Diagnóstico de voz") para que el próximo fallo se
+ *  diagnostique sin adivinar. */
+function voiceDiagText() {
+  var speaking = false, pending = false, paused = false, n = 0;
+  try {
+    var s = window.speechSynthesis;
+    if (s) {
+      speaking = !!s.speaking; pending = !!s.pending; paused = !!s.paused;
+      var vs = s.getVoices() || [];
+      n = vs.length;
+    }
+  } catch (e) {}
+  var motor = !voiceSupported ? "sin voz" :
+    (paused ? "en pausa" : (speaking ? "hablando" : (pending ? "en cola" :
+    (voiceUnlocked ? "listo" : "en espera de gesto"))));
+  var voiceName = spanishVoice ?
+    ((spanishVoice.name || "?") + " (" + (spanishVoice.lang || "?") + ")") :
+    "sin voz en español";
+  return "Motor: " + motor + " · Voces: " + n + " · Voz: " + voiceName;
+}
+
+function updateVoiceDiag() {
+  var el = $("voiceDiag");
+  if (el) el.textContent = "🔍 Diagnóstico de voz: " + voiceDiagText();
 }
 
 /* --- Desbloqueo y cola de voz (clave en iOS/Safari) -------------------- */
@@ -321,6 +374,34 @@ function pickSpanishVoice() {
  *  - Si no hay voces en español o speechSynthesis no responde,
  *    "Probar voz" lo muestra en pantalla y el juego sigue con
  *    pitidos de respaldo.
+ *
+ * REVISIÓN ?v=6 (2026-11-11, tras el fallo en la sala CNWN):
+ *  La prueba de voz falló en el teléfono de Tato aunque estaba en
+ *  ?v=5: el "¡Hola!" de desbloqueo (volumen 0, dentro del tap) nunca
+ *  disparó onstart/onend/onerror, así que "Probar voz" marcaba "La
+ *  voz no respondió" y ningún anuncio se intentaba. La prueba pasó
+ *  solo tras cerrar Safari por completo y reabrir: el motor estaba
+ *  atorado, probablemente por el cancel() del botón de silencio
+ *  (stopSpeaking) y de clearStuckSpeech(). ChatGPT coincidió en lo
+ *  principal (desbloqueo silencioso defectuoso, sin listener
+ *  voiceschanged, paused nunca leído) y corrigió que el bug WebKit
+ *  191745 está resuelto desde marzo 2026 y que el GC del utterance
+ *  es poco probable. Cambios ?v=6:
+ *  - testVoice(): UN SOLO utterance AUDIBLE directo en el tap, sin
+ *    unlock previo ni cancel(); onend = éxito; timeout 8 s solo para
+ *    mostrar el estado, nunca cancelar; diagnóstico visible.
+ *  - stopSpeaking(): cancel() SOLO al tocar silencio expresamente;
+ *    invalida voiceUnlocked (hay que volver a probar con un gesto).
+ *  - clearStuckSpeech() eliminado: ya no se cancela automáticamente.
+ *  - unlockVoice(): "¡Hola!" AUDIBLE (volumen 1); sin desbloqueo
+ *    silencioso.
+ *  - speakNow(): éxito SOLO con onstart+onend; onerror = fallo;
+ *    sin éxito falso por temporizador; límite 8 s para arrancar.
+ *  - Voces: listener voiceschanged + chequeo de paused; selección
+ *    por puntaje (Paulina mejorada es-MX > Mónica mejorada es-ES >
+ *    Paulina compacta > Mónica); la voz suena robótica si se elige
+ *    la compacta. Tato ya tiene Paulina mejorada instalada.
+ *  - Panel "Diagnóstico de voz" visible en el lobby.
  */
 var voiceSupported = (typeof window !== "undefined") && ("speechSynthesis" in window);
 var voiceUnlocked = false;   // true SOLO tras onstart/onend de un utterance de desbloqueo
@@ -331,8 +412,9 @@ var speechQueue = []; // { text, opts, tries }
 var speechBusy = false;
 var speechWaitingVoices = false;
 var voiceUnlockAttemptedAt = 0;
-var voiceUnlockAudible = false; // el próximo intento de desbloqueo será audible
 var lastSpeechActivityAt = 0;
+var activeUtterance = null; // utterance de anuncio en curso (referencia global: que no se pierda)
+var testUtterance = null;   // utterance de "Probar voz" (referencia global)
 
 function refreshVoices() {
   try {
@@ -341,6 +423,7 @@ function refreshVoices() {
   } catch (e) {}
   spanishVoice = pickSpanishVoice();
   if (spanishVoice) voicesReady = true;
+  updateVoiceDiag();
 }
 
 function setVoiceStatus(status, text) {
@@ -348,29 +431,24 @@ function setVoiceStatus(status, text) {
   if (text) voiceStatusText = text;
   var el = $("voiceStatus");
   if (el && text) el.textContent = text;
+  updateVoiceDiag();
 }
 
-/** Si el motor quedó hablando algo que nunca arrancó (cola atorada),
- *  limpiarla con cancel(). Solo se hace cuando hay evidencia de atasco
- *  (speaking sin actividad > 2.5 s): un cancel() gratuito justo antes
- *  de speak() puede descartar el utterance nuevo en Safari antiguo
- *  (WebKit bug 191745). */
-function clearStuckSpeech() {
-  try {
-    var s = window.speechSynthesis;
-    if (!s || !s.speaking) return;
-    if (lastSpeechActivityAt && Date.now() - lastSpeechActivityAt > 2500) {
-      s.cancel();
-      speechBusy = false;
-    }
-  } catch (e) {}
-}
+/* ?v=6: clearStuckSpeech() ELIMINADO. Hacía cancel() justo antes de
+ * speak() y en el iPhone de Tato el cancel() dejaba el motor atorado
+ * para toda la sesión (la prueba de voz pasó solo tras cerrar Safari
+ * por completo y reabrir). Ya no se cancela automáticamente en ningún
+ * lado: solo stopSpeaking() usa cancel(), y solo cuando el usuario toca
+ * silencio expresamente. */
 
-/** Desbloqueo de la voz. SOLO se llama desde un gesto del usuario
- *  (pointerdown/touchstart en document, o click en "¡Listo a jugar!" /
- *  "Probar voz"). Devuelve true solo si el desbloqueo ya estaba
- *  verificado; el desbloqueo nuevo se confirma por onstart/onend del
- *  utterance, nunca aquí. */
+ /** Desbloqueo de la voz (?v=6). SOLO se llama desde un gesto del
+ *  usuario (pointerdown/touchstart en document, o click en "¡Listo a
+ *  jugar!"). Dice "¡Hola!" AUDIBLE (volumen 1) directamente en el
+ *  gesto: el desbloqueo silencioso (volumen 0) de ?v=3–?v=5 se
+ *  descartaba en el teléfono de Tato sin disparar onstart/onend/
+ *  onerror, así que la app nunca se enteraba del fallo. Devuelve true
+ *  solo si el desbloqueo ya estaba verificado; el desbloqueo nuevo se
+ *  confirma por onstart/onend del utterance, nunca aquí. */
 function unlockVoice() {
   if (!voiceSupported) {
     setVoiceStatus("unsupported", "⚠️ Este navegador no tiene voz (Web Speech no disponible).");
@@ -382,17 +460,15 @@ function unlockVoice() {
   var now = Date.now();
   if (now - voiceUnlockAttemptedAt < 800) return false;
   voiceUnlockAttemptedAt = now;
-  clearStuckSpeech();
   var u;
   try {
-    // Silencioso primero ("¡Hola!" a volumen 0: patrón estándar de
-    // desbloqueo). Si no arranca, el próximo gesto lo reintenta audible.
     u = new SpeechSynthesisUtterance("¡Hola!");
   } catch (e) { return false; }
-  u.lang = "es-MX";
+  u.lang = spanishVoice ? spanishVoice.lang : "es-MX";
   if (spanishVoice) u.voice = spanishVoice;
-  u.volume = voiceUnlockAudible ? 1 : 0;
+  u.volume = 1; // ?v=6: audible. El "¡Hola!" silencioso nunca arrancaba.
   u.rate = 1.2;
+  activeUtterance = u; // referencia global: que no se pierda antes de arrancar
   var done = false;
   u.onstart = function () {
     if (done) return; done = true;
@@ -407,13 +483,6 @@ function unlockVoice() {
     pumpSpeech();
   };
   u.onerror = function () { /* sin onstart: se reintenta en el próximo gesto */ };
-  setTimeout(function () {
-    if (!done) {
-      // El utterance de desbloqueo no arrancó (WebKit lo descartó).
-      // NO desbloquear; el próximo gesto reintenta, audible.
-      voiceUnlockAudible = true;
-    }
-  }, 1500);
   lastSpeechActivityAt = now;
   try { window.speechSynthesis.speak(u); } catch (e) {}
   return false;
@@ -456,17 +525,25 @@ function pumpSpeech() {
 }
 
 function speakNow(item) {
-  try { window.speechSynthesis.resume(); } catch (e) {}
-  clearStuckSpeech();
+  var s = window.speechSynthesis;
+  try { if (s) s.resume(); } catch (e) {} // si el motor está en pausa, despertarlo
+  // ?v=6: NUNCA cancel() aquí (atoraba el motor en iOS). Si el motor
+  // está en pausa se lee con s.paused; resume() ya lo despertó arriba.
   var u;
-  try { u = new SpeechSynthesisUtterance(item.text); } catch (e) { finishSpeech(item, true, false); return; }
-  u.lang = "es-MX";
+  try { u = new SpeechSynthesisUtterance(item.text); } catch (e) { finishSpeech(item, false, false); return; }
+  u.lang = spanishVoice ? spanishVoice.lang : "es-MX";
   if (spanishVoice) u.voice = spanishVoice;
   u.rate = (item.opts && item.opts.rate) || 1.05;
   u.pitch = (item.opts && item.opts.pitch) || 1.1;
   u.volume = 1;
+  activeUtterance = u; // referencia global: que no se pierda antes de arrancar
   var done = false, started = false;
-  var finishOnce = function (ok) { if (done) return; done = true; finishSpeech(item, ok, started); };
+  var startAt = Date.now();
+  var finishOnce = function (ok) {
+    if (done) return; done = true;
+    if (activeUtterance === u) activeUtterance = null;
+    finishSpeech(item, ok, started);
+  };
   u.onstart = function () {
     if (done) return;
     started = true;
@@ -475,32 +552,31 @@ function speakNow(item) {
     duckMusic(true);
     if (item.opts && item.opts.onstart) { try { item.opts.onstart(); } catch (e) {} }
   };
-  u.onend = function () { lastSpeechActivityAt = Date.now(); finishOnce(true); };
-  u.onerror = function (ev) { lastSpeechActivityAt = Date.now(); finishOnce(!(ev && ev.error === "not-allowed")); };
-  // Watchdog de arranque: si a los 1.5 s el utterance no arrancó, hay que
-  // distinguir "el motor lo descartó en silencio" (reencolar) de "el motor
-  // está ocupado o la voz tarda en arrancar" (esperar, NO duplicar).
-  // Antes, el watchdog reencolaba siempre a los 1.5 s: con una voz lenta
-  // (espeak en Linux, o la primera voz tras el desbloqueo en iOS) cada
-  // anuncio se decía 3 veces, la cola se atascaba y los anuncios de las
-  // rondas siguientes (y el podio) quedaban esperando detrás. La señal
-  // es el estado del motor: si sigue speaking/pending, el utterance
-  // está vivo en el motor y solo hay que esperar a que arranque.
+  // ?v=6: éxito SOLO con onstart + onend. Un onend sin onstart previo
+  // significa que el utterance no sonó de verdad: es fallo, no éxito.
+  u.onend = function () { lastSpeechActivityAt = Date.now(); finishOnce(started); };
+  // ?v=6: onerror siempre es fallo (antes, cualquier error distinto de
+  // "not-allowed" se contaba como éxito).
+  u.onerror = function () { lastSpeechActivityAt = Date.now(); finishOnce(false); };
+  // Watchdog de arranque (?v=6): si a los 1.5 s el utterance no arrancó,
+  // hay que distinguir "el motor lo descartó en silencio" (fallo) de
+  // "el motor está ocupado o la voz tarda en arrancar" (esperar, NO
+  // duplicar). Límite absoluto: 8 s sin onstart = fallo (antes, un
+  // temporizador a los 6 s+ marcaba finishOnce(true) SIN onstart: un
+  // éxito falso que dejaba creer que el anuncio se había dicho).
   var watchdog = function () {
     if (done || started) return;
+    if (Date.now() - startAt >= 8000) { finishOnce(false); return; }
     var busy = false;
     try {
-      var s = window.speechSynthesis;
       busy = !!(s && (s.speaking || s.pending));
     } catch (e) {}
     if (busy) { setTimeout(watchdog, 1500); return; }
-    clearStuckSpeech();
     finishOnce(false);
   };
   setTimeout(watchdog, 1500);
-  setTimeout(function () { if (!done) finishOnce(true); }, Math.max(6000, item.text.length * 200 + 6000));
   lastSpeechActivityAt = Date.now();
-  try { window.speechSynthesis.speak(u); } catch (e) { finishOnce(false); }
+  try { s.speak(u); } catch (e) { finishOnce(false); }
 }
 
 function finishSpeech(item, ok, started) {
@@ -518,17 +594,30 @@ function finishSpeech(item, ok, started) {
   if (speechQueue.length) pumpSpeech();
 }
 
+/** ?v=6: cancel() SOLO para detener expresamente cuando el usuario
+ *  toca silencio. Tras cancel() el motor de iOS puede quedar atorado,
+ *  así que la voz YA NO se considera desbloqueada: hace falta un nuevo
+ *  gesto ("Probar voz" o cualquier tap) para volver a probar. También
+ *  se vacía la cola: los anuncios viejos no deben sonar tarde. */
 function stopSpeaking() {
   try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
   speechActive = 0;
   speechBusy = false;
+  speechQueue.length = 0;
+  voiceUnlocked = false;
+  activeUtterance = null;
+  testUtterance = null;
   duckMusic(false);
 }
 
-/** Prueba de voz desde el lobby: quita el silencio si estaba puesto,
- *  desbloquea la voz dentro del gesto (tap) y dice un ejemplo del
- *  anuncio de fin de ronda, para probarla sin jugar una ronda entera.
- *  Muestra en pantalla si funcionó o si falló (y qué revisar). */
+/** Prueba de voz desde el lobby (?v=6, rehecha): UN SOLO utterance
+ *  AUDIBLE creado directamente dentro del tap, con el ejemplo del
+ *  anuncio de fin de ronda. Sin unlockVoice() previo, sin
+ *  clearStuckSpeech() y sin cancel(): el ejemplo ES el intento de
+ *  desbloqueo. Referencia global al utterance; onstart/onend/onerror
+ *  con event.error; timeout de 8 s SOLO para mostrar el estado en
+ *  pantalla, nunca para cancelar. onend se registra como éxito, no
+ *  como error. Muestra el diagnóstico del motor y la voz elegida. */
 function testVoice() {
   ensureAudio();
   if (muted) {
@@ -538,23 +627,55 @@ function testVoice() {
     if (sfxGain) sfxGain.gain.value = SFX_LEVEL;
     updateSoundBtn();
   }
-  unlockVoice(); // dentro del gesto: desbloquea la voz en iOS
+  refreshVoices(); // re-leer las voces (por si se descargó una nueva)
   var said = false;
-  speak("El ganador de la ronda es Tato, con 900 puntos. En segundo lugar, Milly, con 600 puntos.", {
-    onstart: function () {
-      said = true;
-      setVoiceStatus("ok", "✅ Voz funcionando: se escuchó el ejemplo.");
-    },
-    onfail: function () {
-      setVoiceStatus("blocked", "⚠️ La voz no se escuchó. Revisa el interruptor de silencio de tu iPhone y el volumen.");
-    }
-  });
+  var text = "El ganador de la ronda es Tato, con 900 puntos. En segundo lugar, Milly, con 600 puntos.";
+  var u;
+  try {
+    u = new SpeechSynthesisUtterance(text);
+  } catch (e) {
+    setVoiceStatus("unsupported", "⚠️ Este navegador no tiene voz (Web Speech no disponible).");
+    return;
+  }
+  // Si getVoices() viene vacío no se bloquea la prueba: se intenta con
+  // lang es-MX (o la de la voz elegida) sin asignar voice.
+  u.lang = spanishVoice ? spanishVoice.lang : "es-MX";
+  if (spanishVoice) u.voice = spanishVoice;
+  u.rate = 1.05;
+  u.pitch = 1.1;
+  u.volume = 1;
+  testUtterance = u; // referencia global
+  activeUtterance = u;
+  u.onstart = function () {
+    said = true;
+    voiceUnlocked = true;
+    lastSpeechActivityAt = Date.now();
+    setVoiceStatus("ok", "✅ Voz funcionando: se escuchó el ejemplo.");
+    pumpSpeech();
+  };
+  u.onend = function () {
+    // onend = éxito (el ejemplo sonó), no error.
+    said = true;
+    voiceUnlocked = true;
+    lastSpeechActivityAt = Date.now();
+    setVoiceStatus("ok", "✅ Voz funcionando: se escuchó el ejemplo.");
+    pumpSpeech();
+  };
+  u.onerror = function (ev) {
+    var code = ev && ev.error ? ev.error : "desconocido";
+    setVoiceStatus("blocked", "⚠️ La voz falló (error: " + code + "). " + voiceDiagText());
+  };
   toast("🔊 Probando la voz…");
+  try { window.speechSynthesis.resume(); } catch (e) {}
+  try { window.speechSynthesis.speak(u); } catch (e) {
+    setVoiceStatus("blocked", "⚠️ La voz no se pudo iniciar. " + voiceDiagText());
+    return;
+  }
   setTimeout(function () {
     if (!said && voiceStatus !== "ok") {
-      setVoiceStatus("blocked", "⚠️ La voz no respondió. Toca de nuevo \"Probar voz\" o revisa el interruptor de silencio de tu iPhone y el volumen.");
+      setVoiceStatus("blocked", "⚠️ La voz no respondió. " + voiceDiagText() + " Toca de nuevo \"Probar voz\" o revisa el interruptor de silencio de tu iPhone y el volumen.");
     }
-  }, 4000);
+  }, 8000);
 }
 
 /* --- Versión de la app y aviso de actualización ---------------------- */
@@ -564,7 +685,7 @@ function testVoice() {
  * versión mayor que APP_VERSION, se muestra un banner con botón de
  * recarga. Así el usuario nunca juega sin saber que hay una versión
  * nueva (esto es lo que pasó con ?v=2 en la sala HFTY). */
-var APP_VERSION = 5;
+var APP_VERSION = 6;
 
 function checkAppVersion() {
   try {
@@ -769,7 +890,13 @@ function burstFirework(x, y, color) {
 function setConnected(on) {
   connected = on;
   var dot = $("connDot");
-  if (dot) dot.className = "conn-dot " + (on ? "on" : "off");
+  if (dot) {
+    dot.className = "conn-dot " + (on ? "on" : "off");
+    // ?v=6: el title nunca se actualizaba y siempre decía "Sin
+    // conexión" aunque el punto estuviera verde (así se vio en la
+    // partida CNWN aunque la sala funcionaba).
+    dot.title = on ? "Conectado" : "Sin conexión";
+  }
 }
 
 function send(msg) {
@@ -812,23 +939,31 @@ function connectWS(code) {
     toast("No se pudo abrir la conexión: " + e.message, "error");
     return;
   }
+  // ?v=6: el socket capturado. Si una reconexión crea un socket nuevo,
+  // los eventos tardíos del socket viejo se ignoran (su onclose ya no
+  // puede apagar el punto verde de la conexión actual: en CNWN el punto
+  // mostró "Sin conexión" aunque la sala funcionaba).
+  var sock = ws;
   ws.onopen = function () {
+    if (sock !== ws) return;
     setConnected(true);
     reconnectAttempts = 0;
     send({ type: "join", name: myName });
   };
   ws.onmessage = function (ev) {
+    if (sock !== ws) return;
     var msg;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (msg.type === "state" && msg.state) onState(msg.state);
     else if (msg.type === "error" && msg.message) toast("🔔 " + msg.message, "error");
   };
   ws.onclose = function () {
+    if (sock !== ws) return;
     setConnected(false);
     if (demoMode) return;
     if (currentState && currentState.phase !== "gameOver") scheduleReconnect();
   };
-  ws.onerror = function () { setConnected(false); };
+  ws.onerror = function () { if (sock === ws) setConnected(false); };
 }
 
 var selectedRounds = 5;
@@ -1218,6 +1353,7 @@ function renderLobby(state) {
     (players.length === 1 ? '<p class="share-note"><b>' + esc(players[0].name) + '</b> ya está en la sala. Esperando a alguien más…</p>' : "") +
     '<button type="button" class="btn btn-ghost" id="voiceTestBtn" style="width:100%;margin-top:12px">🔊 Probar voz</button>' +
     '<p id="voiceStatus" class="share-note">' + esc(voiceStatusText || "Toca “Probar voz” para oír un ejemplo del anuncio de fin de ronda sin jugar. Si no se escucha, revisa el interruptor de silencio de tu iPhone y el volumen.") + '</p>' +
+    '<div id="voiceDiag" class="voice-diag">🔍 Diagnóstico de voz: ' + esc(voiceDiagText()) + '</div>' +
     '</div>';
 
   var vt = $("voiceTestBtn");
@@ -1370,6 +1506,18 @@ function categoryLabel(state, id) {
   return id;
 }
 
+/** Salir de la sala (?v=6): cierra el socket y vuelve al lobby.
+ *  Antes no había botón "Salir" en fin de ronda y había que recargar
+ *  la página para salir (así le pasó a Milly en la partida CNWN). */
+function leaveRoom() {
+  if (ws) { try { ws.close(); } catch (e) {} }
+  ws = null;
+  myId = null; roomCode = ""; currentState = null;
+  draft = {}; lastSyncedDraft = {}; draftBonus = ""; lastSyncedBonus = "";
+  setConnected(false);
+  render({ phase: "lobby", players: [], code: "" });
+}
+
 function renderRoundEnd(state) {
   clearWritingFlag();
   maybeAnnounceRoundEnd(state);
@@ -1422,12 +1570,15 @@ function renderRoundEnd(state) {
     '<p class="phase-sub">La siguiente ronda empieza solo cuando <b>TODOS</b> toquen <b>“Continuar”</b>.</p>' +
     '<div class="ready-list">' + contRows + '</div>' +
     '<div class="btn-row"><button class="btn" id="continueBtn" ' + (iContinued ? "disabled" : "") + '>' +
-    (iContinued ? "✅ ¡Listo para continuar! Esperando a los demás…" : (isLastRound ? "🏆 Ver el podio final" : "➡️ Continuar")) + '</button></div>';
+    (iContinued ? "✅ ¡Listo para continuar! Esperando a los demás…" : (isLastRound ? "🏆 Ver el podio final" : "➡️ Continuar")) + '</button>' +
+    '<button class="btn btn-ghost" id="leaveBtn">🚪 Salir de la sala</button></div>';
   var btn = $("continueBtn");
   if (btn) btn.addEventListener("click", function () {
     btn.disabled = true;
     send({ type: "continue" });
   });
+  var lb = $("leaveBtn");
+  if (lb) lb.addEventListener("click", function () { leaveRoom(); });
 }
 
 function renderGameOver(state) {
@@ -1465,11 +1616,7 @@ function renderGameOver(state) {
     toast("🔄 ¡Revancha! La ruleta gira otra vez…");
   });
   var lb = $("leaveBtn");
-  if (lb) lb.addEventListener("click", function () {
-    if (ws) ws.close();
-    myId = null; roomCode = ""; currentState = null;
-    render({ phase: "lobby", players: [], code: "" });
-  });
+  if (lb) lb.addEventListener("click", function () { leaveRoom(); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1645,6 +1792,15 @@ function toggleMute() {
 
 function init() {
   updateSoundBtn();
+  // ?v=6: escuchar cuando llegan las voces (en iOS getVoices() empieza
+  // vacío y se llena de forma asíncrona) y leerlas al arrancar, para
+  // que el lobby ya muestre la voz elegida (Paulina mejorada).
+  try {
+    if (window.speechSynthesis && window.speechSynthesis.addEventListener) {
+      window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+    }
+  } catch (e) {}
+  refreshVoices();
   checkAppVersion(); // si hay versión nueva en el servidor, avisar con banner
   document.addEventListener("pageshow", function () { checkAppVersion(); });
   var sb = $("soundBtn");
@@ -1695,6 +1851,11 @@ window.__BASTA__ = {
   appVersion: APP_VERSION,
   checkAppVersion: checkAppVersion,
   voiceStatus: function () { return voiceStatus; },
-  isVoiceUnlocked: function () { return voiceUnlocked; }
+  isVoiceUnlocked: function () { return voiceUnlocked; },
+  voiceName: function () { return spanishVoice ? spanishVoice.name : null; },
+  voiceDiag: voiceDiagText,
+  setConnected: setConnected,
+  speechQueueLength: function () { return speechQueue.length; },
+  leaveRoom: leaveRoom
 };
 

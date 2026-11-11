@@ -175,6 +175,9 @@ body {
 .btn-red { background: linear-gradient(180deg, #ff6b60, var(--red)); color: #fff; box-shadow: 0 4px 0 #8f130c, 0 6px 14px rgba(0,0,0,.45); }
 .btn-teal { background: linear-gradient(180deg, #7df0e8, var(--teal)); color: #00312e; box-shadow: 0 4px 0 #007a73, 0 6px 14px rgba(0,0,0,.45); }
 .btn-ghost { background: rgba(255,255,255,.12); color: #fff; border: 2px solid rgba(255,255,255,.5); box-shadow: none; }
+
+/* Panel "Diagnóstico de voz" (?v=6): estado del motor y voz elegida, visible en el lobby. */
+.voice-diag { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,.25); color: #d9f7e8; font-size: 12.5px; line-height: 1.5; text-align: left; word-break: break-word; }
 .btn-basta {
   width: 100%; min-height: 72px; font-size: 26px; margin-top: 16px;
   background: linear-gradient(180deg, #ff8a80, var(--red) 55%, #b71c1c); color: #fff;

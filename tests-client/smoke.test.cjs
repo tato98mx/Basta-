@@ -127,27 +127,27 @@ describe("borrador local vs eco del servidor (carrera de sincronización)", () =
   });
 });
 
-describe("aviso de versión nueva (anti-caché ?v=5)", () => {
+describe("aviso de versión nueva (anti-caché ?v=6)", () => {
   const fetchVersion = (v) => () => Promise.resolve({ json: () => Promise.resolve({ version: v }) });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   it("si el servidor reporta una versión mayor, aparece el banner de actualización", async () => {
-    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(6) });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(7) });
     // El stub El arranca con hidden=false; simular el atributo hidden del HTML
     // antes de que se resuelva la promesa de checkAppVersion().
     const banner = app.__doc__.getElementById("updateBanner");
     banner.hidden = true;
     await sleep(100);
-    assert.equal(banner.hidden, false, "con versión 6 en el servidor debe aparecer el banner");
-    assert.ok(app.__BASTA__.appVersion === 5, "la app cargada es la v5");
+    assert.equal(banner.hidden, false, "con versión 7 en el servidor debe aparecer el banner");
+    assert.ok(app.__BASTA__.appVersion === 6, "la app cargada es la v6");
   });
 
   it("si el servidor reporta la misma versión, no aparece el banner", async () => {
-    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(5) });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(6) });
     const banner = app.__doc__.getElementById("updateBanner");
     banner.hidden = true;
     await sleep(100);
-    assert.equal(banner.hidden, true, "con versión 5 no debe aparecer el banner");
+    assert.equal(banner.hidden, true, "con versión 6 no debe aparecer el banner");
   });
 });
 

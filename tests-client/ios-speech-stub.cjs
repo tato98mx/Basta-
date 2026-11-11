@@ -53,10 +53,17 @@ function makeIOSSPEECH(opts = {}) {
   const dropSilentUnlock = !!opts.dropSilentUnlock;
   const stuckOutsideGesture = !!opts.stuckOutsideGesture;
   const slowStartMs = opts.slowStartMs || 0;
-  const VOICES = [
-    { name: "Paulina", lang: "es-MX", voiceURI: "com.apple.speech.synthesis.voice.paulina", default: false, localService: true },
-    { name: "Mónica", lang: "es-ES", voiceURI: "com.apple.speech.synthesis.voice.monica", default: false, localService: true },
+  // ?v=6: el teléfono de Tato ya tiene Paulina mejorada instalada
+  // (Ajustes > Accesibilidad > Lectura y voz > Voces, Español México).
+  // El stub la incluye junto a las compactas para probar la selección
+  // por puntaje: Paulina mejorada es-MX debe ganar siempre.
+  const VOICES = opts.voices || [
+    { name: "Paulina", lang: "es-MX", voiceURI: "com.apple.voice.compact.es-MX.Paulina", default: false, localService: true },
+    { name: "Paulina (mejorada)", lang: "es-MX", voiceURI: "com.apple.voice.enhanced.es-MX.Paulina", default: false, localService: true },
+    { name: "Mónica", lang: "es-ES", voiceURI: "com.apple.voice.compact.es-ES.Monica", default: false, localService: true },
+    { name: "Mónica (mejorada)", lang: "es-ES", voiceURI: "com.apple.voice.enhanced.es-ES.Monica", default: false, localService: true },
   ];
+  let dropAll = !!opts.dropAll; // ?v=6: motor atorado: todo speak() se descarta sin eventos
   const delivered = [];
   const dropped = [];
   let voicesLoaded = false;
@@ -102,6 +109,9 @@ function makeIOSSPEECH(opts = {}) {
     addEventListener(type, fn) { handlers[type] = fn; },
     removeEventListener(type, fn) { if (handlers[type] === fn) delete handlers[type]; },
     speak(u) {
+      // ?v=6: motor atorado (p. ej. tras un cancel() en iOS): todo se
+      // descarta en silencio, sin onstart/onend/onerror.
+      if (dropAll) { dropped.push(u.text); return; }
       // Variante: un utterance silencioso no cuenta como desbloqueo.
       if (dropSilentUnlock && u.volume === 0) { dropped.push(u.text); return; }
       // Regla de WebKit en iOS: sin gesto previo, se descarta en silencio
@@ -158,6 +168,7 @@ function makeIOSSPEECH(opts = {}) {
     get voicesLoaded() { return voicesLoaded; },
     pendingCount() { return pending.length; },
     setGesture(v) { gesture = !!v; },
+    setDropAll(v) { dropAll = !!v; },
     loadVoices,
     armVoices() { setTimeout(loadVoices, voicesDelayMs); },
   };

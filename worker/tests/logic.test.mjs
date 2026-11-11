@@ -171,6 +171,21 @@ describe("diccionario", () => {
       }
     }
   });
+
+  it("palabras que dieron 0 en vivo siendo válidas (?v=6, salas HFTY/CNWN)", () => {
+    // "Ibérico" (Comida, I) faltaba en el diccionario: 0 en CNWN.
+    assert.equal(judgeAnswer("Ibérico", "comida", "I").valid, true);
+    assert.equal(judgeAnswer("ibérico", "comida", "I").valid, true);
+    // "Ilama" es una fruta mexicana (Annona diversifolia): válida en
+    // Fruta o Verdura con I; como Animal sigue siendo 0 (no es animal).
+    assert.equal(judgeAnswer("Ilama", "fruta", "I").valid, true);
+    assert.equal(judgeAnswer("Ilama", "animal", "I").valid, false);
+    // "Uniforme" ya estaba en Cosa/U: el 0 de HFTY no era el diccionario.
+    assert.equal(judgeAnswer("Uniforme", "cosa", "U").valid, true);
+    // "Utopía" (serie de TV) faltaba en Película/U.
+    assert.equal(judgeAnswer("Utopía", "pelicula", "U").valid, true);
+    assert.equal(judgeAnswer("utopia", "pelicula", "U").valid, true);
+  });
 });
 
 describe("puntuación 100 / 50 / 0", () => {

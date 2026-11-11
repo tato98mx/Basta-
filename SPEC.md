@@ -63,7 +63,7 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
 - Si la palabra existe en **otra** categoría con esa misma letra, el motivo
   es "No es un(a) <categoría>" (p. ej. "mango" como animal → "No es un
   animal"). Si no existe en ninguna, "No está en el diccionario del juego".
-- **Cobertura del diccionario:** 2.512 palabras principales + 213 bonus.
+- **Cobertura del diccionario:** 2.515 palabras principales + 213 bonus.
   Por categoría: Nombre 359, Apellido 276, Ciudad 363, Animal 247,
   Fruta 195, Comida 219, Profesión 255, Cosa 304, Película 294. Cada
   combinación categoría × letra tiene al menos 1 palabra y cada letra
@@ -211,7 +211,9 @@ jugador y le manda el estado actual **directo a ese socket**.
   del usuario. Por eso `unlockVoice()` corre en CADA `pointerdown` /
   `touchstart`: hace `resume()` y un `speak()` dentro del gesto, que es
   lo que desbloquea la voz para el resto de la sesión. Sin esto,
-  NINGÚN anuncio sonaba (ni la letra, ni el podio).
+  NINGÚN anuncio sonaba (ni la letra, ni el podio). Desde ?v=6 el
+  desbloqueo es AUDIBLE ("¡Hola!", volumen 1): el silencioso
+  (volumen 0) se descartaba sin eventos en el teléfono de Tato.
 - **Causa raíz del fallo de voz (?v=3, 2026-11-11):** la partida en la
   que Tato reportó "no sale la voz" (sala HFTY, 06:58–07:01 UTC) empezó
   ~5 minutos después de publicarse ?v=2 (06:52 UTC) en una pestaña de
@@ -234,7 +236,7 @@ jugador y le manda el estado actual **directo a ese socket**.
   para no descartar el utterance nuevo en Safari antiguo). Watchdog de
   1.5 s sin `onstart`: se limpia la cola atorada y se reencola (hasta
   2 reintentos).
-- **Anti-caché:** los assets llevan `?v=5` y la app pide
+- **Anti-caché:** los assets llevan `?v=6` y la app pide
   `version.json` con anti-caché al arrancar (y al volver a la pestaña);
   si el servidor reporta una versión mayor que `APP_VERSION`, aparece
   un banner "Hay una versión nueva — Actualizar ahora" que recarga la
@@ -248,6 +250,45 @@ jugador y le manda el estado actual **directo a ese socket**.
   Ahora `onState` fusiona: lo que en local difiere de lo último enviado
   (`lastSyncedDraft`) es un cambio pendiente y gana; lo demás se toma
   del servidor. Lo mismo para la palabra bonus (`lastSyncedBonus`).
+- **Voz ?v=6 (2026-11-11, fallo en la sala CNWN):** "Probar voz"
+  marcaba "La voz no respondió" aunque Tato estaba en ?v=5: el
+  "¡Hola!" de desbloqueo (volumen 0, dentro del tap) nunca disparó
+  `onstart`/`onend`/`onerror`. La prueba pasó solo tras cerrar Safari
+  por completo y reabrir: el motor estaba atorado, probablemente por
+  el `cancel()` del botón de silencio y de `clearStuckSpeech()`.
+  ChatGPT coincidió en lo principal y corrigió dos cosas: el bug
+  WebKit 191745 está resuelto desde marzo 2026 y el GC del utterance
+  es poco probable. Cambios: (1) `testVoice()` es UN SOLO utterance
+  AUDIBLE directo en el tap, sin unlock previo ni `cancel()`; `onend`
+  = éxito; timeout de 8 s solo para mostrar el estado, nunca
+  cancelar; (2) `stopSpeaking()` conserva `cancel()` SOLO al tocar
+  silencio expresamente e invalida `voiceUnlocked`; (3)
+  `clearStuckSpeech()` eliminado, ya no se cancela automáticamente;
+  (4) `unlockVoice()` con "¡Hola!" audible (volumen 1), sin
+  desbloqueo silencioso; (5) `speakNow()`: éxito SOLO con
+  `onstart`+`onend`, `onerror` = fallo, sin éxito falso por
+  temporizador, límite de 8 s para arrancar, máx. 2 reintentos;
+  (6) voces: listener `voiceschanged` + chequeo de `paused`;
+  selección por puntaje (Paulina mejorada es-MX > Mónica mejorada
+  es-ES > Paulina compacta > Mónica) — la compacta suena robótica
+  (la "Siri vieja"); Tato ya tiene Paulina mejorada instalada en
+  Ajustes > Accesibilidad > Lectura y voz > Voces; (7) panel
+  "Diagnóstico de voz" visible en el lobby (motor, nº de voces,
+  voz elegida). Referencias globales al utterance activo.
+  Los audios TTS pregrabados por Web Audio quedan como fase 2, no
+  en ?v=6.
+- **Botón "Salir" (?v=6):** en fin de ronda hay "🚪 Salir de la
+  sala" (antes había que recargar la página para salir, como le pasó
+  a Milly en CNWN). También se usa en el podio final.
+- **Indicador "Sin conexión" (?v=6):** el `title` del punto nunca se
+  actualizaba y siempre decía "Sin conexión" aunque el punto estuviera
+  verde (así se vio en CNWN aunque la sala funcionaba); ahora el
+  título cambia a "Conectado"/"Sin conexión" y los eventos tardíos de
+  un socket viejo ya no apagan el punto de la conexión actual.
+- **Diccionario ?v=6:** 2.515 palabras principales (antes 2.512):
+  + "ibérico" (Comida/I), + "ilama" (Fruta/I, fruta mexicana),
+  + "utopía" (Película/U, serie de TV). "Uniforme" ya estaba en
+  Cosa/U: su 0 en la sala HFTY no era el diccionario.
 - **Watchdog de voz (?v=5, 2026-11-11):** el watchdog de 1.5 s en
   `speakNow` reencolaba el utterance siempre que no llegaba `onstart`,
   aunque el motor estuviera trabajando: con una voz lenta (onstart
@@ -281,7 +322,7 @@ jugador y le manda el estado actual **directo a ese socket**.
 
 ```
 /index.html, /app.js, /style.css, /config.js   (frontend, GitHub Pages)
-/manifest.json, /version.json                  (versión anti-caché ?v=5)
+/manifest.json, /version.json                  (versión anti-caché ?v=6)
 /gen_dict.py                                   (generador del diccionario)
 /worker/wrangler.toml                          (Worker "basta" + RoomDO)
 /worker/package.json, /worker/tsconfig.json
@@ -346,10 +387,15 @@ Con 2 jugadores:
 - `tests-client/voice.test.cjs`: voz en iOS con un stub fiel de
   speechSynthesis (cola FIFO, descarte fuera de gesto, voces tardías).
   Tres pruebas nuevas ?v=3 fallan con el código ?v=2 y pasan con ?v=3. Una prueba nueva ?v=5 (onstart lento) falla con el código ?v=4 y pasa con ?v=5: el anuncio se dice una sola vez, no tres.
+  Seis pruebas nuevas ?v=6: testVoice con UN solo utterance audible
+  (sin "¡Hola!" previo), selección por puntaje (Paulina mejorada
+  primero, con fallbacks), listener voiceschanged, speakNow sin
+  onstart nunca es éxito (máx. 2 reintentos), punto de conexión
+  (clase + título) y botón "Salir" en fin de ronda.
   desbloqueo silencioso descartado (reintento audible), cola atorada
   por un speak fuera de gesto, y feedback visible de "Probar voz".
   Verificación manual contra ?v=2 en `/tmp/verify_old_voice.cjs`.
-- `worker/tests/logic.test.mjs`: 41 tests, incluidos 5 de la puerta de
+- `worker/tests/logic.test.mjs`: 42 tests, incluidos 5 de la puerta de
   Continuar (no avanza con 1 de 2, avanza con los 2, última ronda →
   podio, fuera de roundEnd falla, repetir no sustituye al otro).
 - `worker/tests/e2e-local.mjs`: verifica el texto del anuncio con el

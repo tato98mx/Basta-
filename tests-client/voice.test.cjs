@@ -27,35 +27,34 @@ function roundEndState() {
 }
 
 describe("voz en iOS ?v=3: desbloqueo verificado y recuperación", () => {
-  it("si el desbloqueo silencioso no cuenta, el anuncio no se pierde: el siguiente gesto lo reintenta audible", async () => {
-    // Variante del stub: WebKit descarta el utterance a volumen 0 incluso
-    // dentro de un gesto (hipótesis: el desbloqueo silencioso no vale).
-    // ?v=2 ponía voiceUnlocked = true sin verificar y perdía el anuncio;
-    // ?v=3 no desbloquea hasta ver onstart y reintenta audible.
-    const ios = makeIOSSPEECH({ voicesDelayMs: 0, dropSilentUnlock: true });
+  it("el desbloqueo ?v=6 es audible: el primer gesto dice '¡Hola!' a volumen 1 y verifica el desbloqueo", async () => {
+    // ?v=6: ya no hay desbloqueo silencioso (volumen 0): en el teléfono
+    // de Tato se descartaba sin disparar onstart/onend/onerror. El
+    // primer gesto dice "¡Hola!" AUDIBLE y su onstart verifica el
+    // desbloqueo; el anuncio encolado se dice después.
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0 });
     ios.loadVoices();
     const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
     const BASTA = app.__BASTA__;
 
-    // Primer gesto con la cola vacía: el desbloqueo silencioso se descarta.
-    ios.setGesture(true);
-    try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
-    await sleep(200);
-    assert.equal(BASTA.isVoiceUnlocked(), false, "?v=3 no debe dar por hecho el desbloqueo sin onstart");
-    assert.deepEqual(audible(ios), [], "el desbloqueo silencioso descartado no debe sonar");
+    // Capturar los utterances para verificar que ninguno es silencioso.
+    const volumes = [];
+    const origSpeak = ios.synth.speak.bind(ios.synth);
+    ios.synth.speak = (u) => { volumes.push(u.volume); return origSpeak(u); };
 
-    // Llega el anuncio de fin de ronda (fuera de gesto): ?v=3 lo encola
-    // SIN intentarlo (no se descarta, no se pierde).
+    // El anuncio llega antes de cualquier gesto: se encola sin intentarlo.
     BASTA.renderState(roundEndState());
-    await sleep(2000);
-    assert.deepEqual(audible(ios), [], "sin desbloqueo verificado no debe sonar todavía");
+    await sleep(500);
+    assert.deepEqual(audible(ios), [], "sin gesto no debe sonar todavía");
     assert.equal(BASTA.isVoiceUnlocked(), false);
 
-    // Segundo gesto: el desbloqueo se reintenta AUDIBLE y arranca.
+    // Primer gesto: desbloqueo AUDIBLE y la cola se vacía.
     ios.setGesture(true);
     try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
     await sleep(4000);
-    assert.equal(BASTA.isVoiceUnlocked(), true, "el reintento audible debe verificar el desbloqueo");
+    assert.equal(BASTA.isVoiceUnlocked(), true, "el desbloqueo audible debe verificarse con onstart");
+    assert.ok(volumes.length > 0 && volumes.every((v) => v === 1), `ningún utterance debe ser silencioso (volumen 0), volúmenes: ${volumes}`);
+    assert.ok(ios.delivered.includes("¡Hola!"), "el desbloqueo audible debe sonar");
     const said = audible(ios).join(" ");
     assert.ok(said.includes("El ganador de la ronda es Tato, con 750 puntos."), `debió decir al ganador, dijo: ${said}`);
     assert.ok(said.includes("En segundo lugar, Milly, con 600 puntos."), `debió decir el 2º, dijo: ${said}`);
@@ -130,16 +129,19 @@ describe("voz en iOS ?v=3: desbloqueo verificado y recuperación", () => {
     assert.equal(appOk.__BASTA__.voiceStatus(), "ok", "con voz funcionando el estado debe ser ok");
     assert.ok((appOk.__els__.voiceStatus.textContent || "").includes("funcionando"), "la pantalla debe decir que la voz funciona");
 
-    // Fallo: el desbloqueo silencioso se descarta y no hay segundo gesto.
-    const iosBad = makeIOSSPEECH({ voicesDelayMs: 0, dropSilentUnlock: true });
+    // Fallo (?v=6): el motor atora todo speak() sin eventos (como el
+    // teléfono de Tato en CNWN): a los 8 s marca blocked con diagnóstico.
+    const iosBad = makeIOSSPEECH({ voicesDelayMs: 0, dropAll: true });
     iosBad.loadVoices();
     const appBad = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: iosBad });
     const btnBad = appBad.__els__.voiceTestBtn;
     iosBad.setGesture(true);
     try { btnBad._listeners.click[0](); } finally { iosBad.setGesture(false); }
-    await sleep(4500);
+    await sleep(9000);
     assert.equal(appBad.__BASTA__.voiceStatus(), "blocked", "si la voz no responde el estado debe ser blocked");
     assert.ok((appBad.__els__.voiceStatus.textContent || "").includes("no respondió"), "la pantalla debe avisar que la voz no respondió");
+    assert.ok((appBad.__els__.voiceDiag.textContent || "").includes("Paulina (mejorada)"), "el diagnóstico debe mostrar la voz elegida");
+    assert.ok((appBad.__els__.voiceDiag.textContent || "").includes("Voces: 4"), "el diagnóstico debe mostrar el número de voces");
   });
 });
 describe("voz en iOS: desbloqueo por gesto y cola con reintento", () => {
@@ -227,5 +229,120 @@ describe("voz en iOS: desbloqueo por gesto y cola con reintento", () => {
     assert.equal(said.length, 3, `debió partirse en 3 oraciones, dijo: ${JSON.stringify(said)}`);
     assert.ok(said.every((t) => t.length <= 100), "cada parte debe ser corta (límite iOS ~15 s)");
     assert.equal(said.join(" "), "El ganador de la ronda es Tato, con 750 puntos. En segundo lugar, Milly, con 600 puntos. En tercer lugar, Ledya, con 450 puntos.");
+  });
+});
+
+describe("voz ?v=6: testVoice audible directo, selección por puntaje y sin éxito falso", () => {
+  it("'Probar voz' habla UN solo utterance audible directo en el tap, sin '¡Hola!' previo", async () => {
+    // ?v=6: testVoice ya no llama a unlockVoice() ni encola por speak():
+    // crea un solo utterance audible con el ejemplo, directo en el tap.
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0 });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+    const btn = app.__els__.voiceTestBtn;
+    ios.setGesture(true);
+    try { btn._listeners.click[0](); } finally { ios.setGesture(false); }
+    await sleep(2500);
+    assert.equal(BASTA.voiceStatus(), "ok", "el ejemplo debe sonar y marcar ok");
+    assert.ok(!ios.delivered.includes("¡Hola!"), `testVoice no debe decir "¡Hola!" antes, dijo: ${JSON.stringify(ios.delivered)}`);
+    assert.equal(ios.delivered.length, 1, `debe ser UN solo utterance, dijo: ${JSON.stringify(ios.delivered)}`);
+    assert.ok(ios.delivered[0].includes("El ganador de la ronda es Tato, con 900 puntos."), "el utterance debe ser el ejemplo completo");
+    assert.ok(ios.delivered[0].includes("En segundo lugar, Milly, con 600 puntos."), "el ejemplo debe incluir el 2º lugar");
+    assert.equal(BASTA.isVoiceUnlocked(), true, "el ejemplo audible desbloquea la voz para los anuncios");
+  });
+
+  it("la selección de voz puntúa Paulina mejorada es-MX primero (la que tiene Tato instalada)", async () => {
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0 });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    assert.equal(app.__BASTA__.voiceName(), "Paulina (mejorada)", "con Paulina mejorada instalada debe elegirla");
+    assert.ok((app.__els__.voiceDiag.textContent || "").includes("Paulina (mejorada)"), "el lobby debe mostrar la voz seleccionada");
+    assert.ok((app.__els__.voiceDiag.textContent || "").includes("Voces: 4"), "el diagnóstico debe contar las voces");
+
+    // Sin mejoradas: Paulina compacta antes que Mónica compacta.
+    const iosCompact = makeIOSSPEECH({ voicesDelayMs: 0, voices: [
+      { name: "Mónica", lang: "es-ES", voiceURI: "com.apple.voice.compact.es-ES.Monica", default: false, localService: true },
+      { name: "Paulina", lang: "es-MX", voiceURI: "com.apple.voice.compact.es-MX.Paulina", default: false, localService: true },
+    ] });
+    iosCompact.loadVoices();
+    const appCompact = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: iosCompact });
+    assert.equal(appCompact.__BASTA__.voiceName(), "Paulina", "sin mejoradas debe elegir Paulina compacta es-MX");
+
+    // Mónica mejorada es-ES antes que Paulina compacta es-MX.
+    const iosMonica = makeIOSSPEECH({ voicesDelayMs: 0, voices: [
+      { name: "Paulina", lang: "es-MX", voiceURI: "com.apple.voice.compact.es-MX.Paulina", default: false, localService: true },
+      { name: "Mónica (mejorada)", lang: "es-ES", voiceURI: "com.apple.voice.enhanced.es-ES.Monica", default: false, localService: true },
+    ] });
+    iosMonica.loadVoices();
+    const appMonica = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: iosMonica });
+    assert.equal(appMonica.__BASTA__.voiceName(), "Mónica (mejorada)", "la mejorada es-ES debe ganar a la compacta es-MX");
+  });
+
+  it("el listener voiceschanged actualiza la voz cuando las voces llegan tarde", async () => {
+    // En iOS getVoices() empieza vacío; ?v=6 agrega el listener
+    // voiceschanged (antes solo se hacía polling).
+    const ios = makeIOSSPEECH({ voicesDelayMs: 60000 });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    assert.equal(app.__BASTA__.voiceName(), null, "sin voces cargadas no hay voz elegida");
+    ios.loadVoices(); // dispara voiceschanged
+    await sleep(200);
+    assert.equal(app.__BASTA__.voiceName(), "Paulina (mejorada)", "al llegar las voces debe elegirse Paulina mejorada");
+  });
+
+  it("speakNow sin onstart nunca es éxito: reintenta 2 veces como máximo y no duplica", async () => {
+    // Regresión ?v=6: antes, un temporizador a los 6 s+ marcaba
+    // finishOnce(true) SIN onstart (éxito falso). Con el motor atorado
+    // el anuncio debe fallar tras 2 reintentos y no sonar nunca.
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0 });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+    // Desbloquear primero con un gesto (motor sano).
+    ios.setGesture(true);
+    try { app.__dispatch__("pointerdown", {}); } finally { ios.setGesture(false); }
+    await sleep(1500);
+    assert.equal(BASTA.isVoiceUnlocked(), true, "precondición: voz desbloqueada");
+
+    // Ahora el motor se atora: todo speak() se descarta sin eventos.
+    let speakCalls = 0;
+    const origSpeak = ios.synth.speak.bind(ios.synth);
+    ios.synth.speak = (u) => { speakCalls++; return origSpeak(u); };
+    ios.setDropAll(true);
+    BASTA.speak("¡La letra es R!");
+    await sleep(7000);
+    assert.equal(speakCalls, 3, `debe intentarse 1 vez + 2 reintentos, se intentó ${speakCalls} veces`);
+    assert.ok(!ios.delivered.includes("¡La letra es R!"), "el anuncio atorado no debe sonar nunca");
+    assert.equal(BASTA.speechQueueLength(), 0, "tras agotar reintentos la cola debe quedar vacía");
+  });
+
+  it("el punto de conexión muestra clase y título correctos (?v=6: el title siempre decía 'Sin conexión')", async () => {
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0 });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+    BASTA.setConnected(true);
+    assert.equal(app.__els__.connDot.className, "conn-dot on", "conectado: punto verde");
+    assert.equal(app.__els__.connDot.title, "Conectado", "conectado: título 'Conectado'");
+    BASTA.setConnected(false);
+    assert.equal(app.__els__.connDot.className, "conn-dot off", "sin conexión: punto rojo");
+    assert.equal(app.__els__.connDot.title, "Sin conexión", "sin conexión: título 'Sin conexión'");
+  });
+
+  it("fin de ronda tiene botón 'Salir' que vuelve al lobby (?v=6: antes había que recargar)", async () => {
+    const ios = makeIOSSPEECH({ voicesDelayMs: 0 });
+    ios.loadVoices();
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", speech: ios });
+    const BASTA = app.__BASTA__;
+    BASTA.renderState(roundEndState());
+    const stageHtml = app.__els__.stage ? app.__els__.stage.innerHTML : "";
+    assert.ok(stageHtml.includes('id="leaveBtn"'), "fin de ronda debe tener el botón Salir");
+    assert.ok(stageHtml.includes("Salir de la sala"), "el botón debe decir Salir de la sala");
+    const lb = app.__els__.leaveBtn;
+    assert.ok(lb && lb._listeners && lb._listeners.click && lb._listeners.click.length === 1, "el botón debe tener su handler");
+    lb._listeners.click[0]();
+    const afterHtml = app.__els__.stage ? app.__els__.stage.innerHTML : "";
+    assert.ok(afterHtml.includes("¡A JUGAR AL BASTA!"), "tras Salir debe volver al lobby");
+    assert.equal(app.__els__.connDot.className, "conn-dot off", "tras Salir el punto debe marcar sin conexión");
   });
 });
