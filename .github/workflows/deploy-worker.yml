@@ -1,0 +1,33 @@
+# Despliegue del Worker de Basta a Cloudflare.
+#
+# Se ejecuta al hacer push a main cuando cambia algo en worker/**.
+#
+# ANTES DEL PRIMER DESPLIEGUE el usuario debe agregar estos dos secrets
+# en el repositorio (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN  → token de API de Cloudflare con permiso
+#                            "Edit Workers" (y Durable Objects).
+#   CLOUDFLARE_ACCOUNT_ID → ID de la cuenta de Cloudflare (se ve en el
+#                            panel, en la parte inferior derecha).
+# Sin esos secrets el workflow falla. No se guardan tokens en este archivo.
+
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
