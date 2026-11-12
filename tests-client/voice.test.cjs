@@ -211,8 +211,8 @@ describe("voz en iOS: desbloqueo por gesto y cola con reintento", () => {
     await sleep(2500);
     assert.equal(app.__store__["basta-muted"], "0", "Probar voz debe quitar el silencio persistido");
     const said = audible(ios).join(" ");
-    assert.ok(said.includes("El ganador de la ronda es Tato, con 900 puntos."), `debió decir el ejemplo, dijo: ${said}`);
-    assert.ok(said.includes("En segundo lugar, Milly, con 600 puntos."), `debió decir el 2º del ejemplo, dijo: ${said}`);
+    assert.ok(said.includes("El ganador de la ronda es Tato, con 700 puntos."), `debió decir el ejemplo, dijo: ${said}`);
+    assert.ok(said.includes("En segundo lugar, Milly, con 500 puntos."), `debió decir el 2º del ejemplo, dijo: ${said}`);
   });
 
   it("las frases largas se parten en oraciones y se dicen en orden", async () => {
@@ -247,8 +247,8 @@ describe("voz ?v=6: testVoice audible directo, selección por puntaje y sin éxi
     assert.equal(BASTA.voiceStatus(), "ok", "el ejemplo debe sonar y marcar ok");
     assert.ok(!ios.delivered.includes("¡Hola!"), `testVoice no debe decir "¡Hola!" antes, dijo: ${JSON.stringify(ios.delivered)}`);
     assert.equal(ios.delivered.length, 1, `debe ser UN solo utterance, dijo: ${JSON.stringify(ios.delivered)}`);
-    assert.ok(ios.delivered[0].includes("El ganador de la ronda es Tato, con 900 puntos."), "el utterance debe ser el ejemplo completo");
-    assert.ok(ios.delivered[0].includes("En segundo lugar, Milly, con 600 puntos."), "el ejemplo debe incluir el 2º lugar");
+    assert.ok(ios.delivered[0].includes("El ganador de la ronda es Tato, con 700 puntos."), "el utterance debe ser el ejemplo completo");
+    assert.ok(ios.delivered[0].includes("En segundo lugar, Milly, con 500 puntos."), "el ejemplo debe incluir el 2º lugar");
     assert.equal(BASTA.isVoiceUnlocked(), true, "el ejemplo audible desbloquea la voz para los anuncios");
   });
 

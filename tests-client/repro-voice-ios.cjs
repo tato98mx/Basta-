@@ -31,7 +31,7 @@ const dict = require("../worker/src/dictionary.json");
 const BASE = "https://basta.ydfz296yrr.workers.dev";
 const CATEGORIES = [
   "nombre", "apellido", "ciudad", "animal", "fruta",
-  "comida", "profesion", "cosa", "pelicula",
+  "comida", "cosa",
 ];
 
 function wordsFor(letter, idx = 0) {
@@ -144,9 +144,9 @@ async function main() {
   const checks = [
     ["dice la letra al inicio", /¡La letra es [A-Z]!/.test(joined)],
     ["dice la cuenta atrás", /Tres/.test(joined) && /Dos/.test(joined) && /Uno/.test(joined)],
-    ["dice ganador de ronda con puntos", /El ganador de la ronda es Tato, con 900 puntos/.test(joined)],
-    ["dice el 2º lugar con puntos", /En segundo lugar, Ledya, con 900 puntos/.test(joined)],
-    ["dice el ganador final", /El ganador del juego es Tato, con 2700 puntos/.test(joined)],
+    ["dice ganador de ronda con puntos", /El ganador de la ronda es Tato, con 700 puntos/.test(joined)],
+    ["dice el 2º lugar con puntos", /En segundo lugar, Ledya, con 700 puntos/.test(joined)],
+    ["dice el ganador final", /El ganador del juego es Tato, con 2100 puntos/.test(joined)],
   ];
   let fail = 0;
   for (const [label, ok] of checks) {

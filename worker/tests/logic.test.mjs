@@ -3,9 +3,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  BONUS_MS,
   BONUS_ROTATION,
   CATEGORIES,
   CATEGORY_IDS,
+  DISCONNECT_PURGE_MS,
   FREEZE_MS,
   GRACE_MS,
   MAX_PLAYERS,
@@ -17,6 +19,8 @@ import {
   judgeAnswer,
   judgeBonus,
   levenshtein,
+  markConnected,
+  markDisconnected,
   maybeEnterReady,
   normalizeAnswer,
   pickLetter,
@@ -182,31 +186,56 @@ describe("diccionario", () => {
     assert.equal(judgeAnswer("Ilama", "animal", "I").valid, false);
     // "Uniforme" ya estaba en Cosa/U: el 0 de HFTY no era el diccionario.
     assert.equal(judgeAnswer("Uniforme", "cosa", "U").valid, true);
-    // "Utopía" (serie de TV) faltaba en Película/U.
-    assert.equal(judgeAnswer("Utopía", "pelicula", "U").valid, true);
-    assert.equal(judgeAnswer("utopia", "pelicula", "U").valid, true);
+    // "Utopía" era de Película/U; esa categoría se quitó en ?v=8 por pedido
+    // de Tato, así que ya no se juzga (la categoría no existe).
+    assert.equal(CATEGORY_IDS.includes("pelicula"), false);
+  });
+
+  it("palabras distintas cortas no colapsan (?v=8, reporte de Tato: caca/caja)", () => {
+    // "caca" y "caja" son palabras distintas de Cosa/C y valen 100 cada una.
+    assert.equal(judgeAnswer("caca", "cosa", "C").valid, true);
+    assert.equal(judgeAnswer("caja", "cosa", "C").valid, true);
+    assert.equal(judgeAnswer("casa", "cosa", "C").valid, true);
+    assert.equal(judgeAnswer("calamar", "animal", "C").valid, true);
+    // Partida con letra C: dos jugadores con esas dos palabras NO son
+    // repetidos (antes ambas caían en "casa" por Levenshtein ≤ 1 y daban 50/50).
+    const s = writingGame(1000, constRng(0.08)); // rng 0.08 → letra C
+    assert.equal(s.letter, "C");
+    const w1 = wordsFor("C", 0);
+    const w2 = wordsFor("C", 1);
+    w1.cosa = "caca";
+    w2.cosa = "caja";
+    submitAnswers(s, "p1", w1);
+    submitAnswers(s, "p2", w2);
+    submitBasta(s, "p1", { now: 1000 });
+    const a1 = s.results.p1.answers.find((a) => a.category === "cosa");
+    const a2 = s.results.p2.answers.find((a) => a.category === "cosa");
+    assert.equal(a1.points, 100);
+    assert.equal(a2.points, 100);
+    assert.equal(s.roundPoints.p1, 700);
+    assert.equal(s.roundPoints.p2, 700);
   });
 });
 
 describe("puntuación 100 / 50 / 0", () => {
-  it("palabras válidas distintas valen 100 cada una (9 × 100 = 900)", () => {
+  it("palabras válidas distintas valen 100 cada una (7 × 100 = 700)", () => {
     const s = writingGame();
     fillPlayer(s, "p1", 0);
     fillPlayer(s, "p2", 1);
     assert.equal(submitBasta(s, "p1", { now: 1000 }).ok, true);
     assert.equal(s.phase, "roundEnd");
-    assert.equal(s.roundPoints.p1, 900);
-    assert.equal(s.roundPoints.p2, 900);
+    assert.equal(s.roundPoints.p1, 700);
+    assert.equal(s.roundPoints.p2, 700);
     assert.equal(s.results.p1.answers[0].reason, "¡Única! 100 pts");
   });
 
-  it("palabra válida repetida vale 50 para cada uno (9 × 50 = 450)", () => {
+  it("palabra válida repetida vale 50 para cada uno (7 × 50 = 350)", () => {
     const s = writingGame();
     fillPlayer(s, "p1", 0);
     fillPlayer(s, "p2", 0); // ¡las mismas palabras!
     submitBasta(s, "p1", { now: 1000 });
-    assert.equal(s.roundPoints.p1, 450);
-    assert.equal(s.roundPoints.p2, 450);
+    assert.equal(s.roundPoints.p1, 350);
+    assert.equal(s.roundPoints.p2, 350);
     assert.equal(s.results.p1.answers[0].reason, "Repetida: 50 pts");
     assert.equal(s.results.p1.answers[0].points, 50);
   });
@@ -232,7 +261,7 @@ describe("puntuación 100 / 50 / 0", () => {
     assert.equal(byCat.comida.reason, "Sin respuesta");
     assert.equal(byCat.cosa.points, 0);
     assert.equal(byCat.cosa.reason, "No está en el diccionario del juego");
-    assert.equal(s.roundPoints.p1, 600); // 6 válidas × 100
+    assert.equal(s.roundPoints.p1, 400); // 4 válidas × 100 (7 categorías)
   });
 
   it("un typo repetido cuenta como repetida (misma canónica)", () => {
@@ -267,14 +296,14 @@ describe("¡BASTA! y bloqueo", () => {
   it("no se puede cantar ¡BASTA! con casillas vacías", () => {
     const s = writingGame();
     const words = wordsFor(s.letter, 0);
-    delete words.pelicula; // 8 de 9
+    delete words.cosa; // 6 de 7
     submitAnswers(s, "p1", words);
     assert.equal(canBasta(s, "p1"), false);
     assert.equal(submitBasta(s, "p1", { now: 1000 }).ok, false);
     assert.equal(s.phase, "writing");
   });
 
-  it("con las 9 llenas el botón se habilita y el ¡BASTA! cierra la ronda", () => {
+  it("con las 7 llenas el botón se habilita y el ¡BASTA! cierra la ronda", () => {
     const s = writingGame();
     fillPlayer(s, "p1", 0);
     assert.equal(canBasta(s, "p1"), true);
@@ -297,7 +326,7 @@ describe("¡BASTA! y bloqueo", () => {
 describe("gracia de 5 segundos para el ganador anterior", () => {
   it("si otro canta ¡BASTA!, el ganador anterior tiene 5 s de gracia", () => {
     const s = writingGame();
-    // Ronda 1: Tato canta ¡BASTA! y gana (empate 900-900, desempate: basta).
+    // Ronda 1: Tato canta ¡BASTA! y gana (empate 700-700, desempate: basta).
     playRound(s, "p1");
     assert.equal(s.roundWinner, "p1");
     assert.equal(s.prevRoundWinner, "p1");
@@ -358,7 +387,7 @@ describe("congelamiento a los 3 minutos y categoría bonus", () => {
     assert.equal(changed, true);
     assert.equal(s.phase, "bonus");
     assert.equal(s.bonusCategory, BONUS_ROTATION[0]); // ronda 1 → Superhéroe
-    assert.deepEqual(s.frozenPoints, { p1: 900, p2: 900 });
+    assert.deepEqual(s.frozenPoints, { p1: 700, p2: 700 });
     // Las respuestas principales ya no se pueden cambiar.
     assert.equal(submitAnswers(s, "p1", wordsFor(s.letter, 0)).ok, false);
   });
@@ -373,8 +402,8 @@ describe("congelamiento a los 3 minutos y categoría bonus", () => {
     submitBonusAnswer(s, "p2", "batman");
     assert.equal(submitBasta(s, "p1", { bonusAnswer: "superman", now: 5000 }).ok, true);
     assert.equal(s.phase, "roundEnd");
-    assert.equal(s.roundPoints.p1, 1000); // 900 + 100
-    assert.equal(s.roundPoints.p2, 1000);
+    assert.equal(s.roundPoints.p1, 800); // 700 + 100
+    assert.equal(s.roundPoints.p2, 800);
     assert.equal(s.results.p1.bonus.points, 100);
     assert.equal(s.results.p1.bonusPoints, 100);
   });
@@ -387,8 +416,8 @@ describe("congelamiento a los 3 minutos y categoría bonus", () => {
     submitBonusAnswer(s, "p1", "superman");
     submitBonusAnswer(s, "p2", "superman"); // repetido
     submitBasta(s, "p2", { bonusAnswer: "superman", now: 5000 });
-    assert.equal(s.roundPoints.p1, 950);
-    assert.equal(s.roundPoints.p2, 950);
+    assert.equal(s.roundPoints.p1, 750); // 700 + 50
+    assert.equal(s.roundPoints.p2, 750);
     assert.equal(s.results.p1.bonus.reason, "Repetida: 50 pts");
 
     // Segunda partida: bonus inválido.
@@ -399,8 +428,8 @@ describe("congelamiento a los 3 minutos y categoría bonus", () => {
     submitBonusAnswer(s2, "p1", "superman");
     submitBonusAnswer(s2, "p2", "inventado total");
     submitBasta(s2, "p1", { bonusAnswer: "superman", now: 5000 });
-    assert.equal(s2.roundPoints.p1, 1000);
-    assert.equal(s2.roundPoints.p2, 900);
+    assert.equal(s2.roundPoints.p1, 800); // 700 + 100
+    assert.equal(s2.roundPoints.p2, 700); // 700 + 0
     assert.equal(s2.results.p2.bonus.points, 0);
   });
 
@@ -504,10 +533,10 @@ describe("letras sin repetir", () => {
 describe("fin de partida y revancha", () => {
   it("al terminar las rondas hay podio y ganador por total", () => {
     const s = writingGame(1000, constRng(0.5), 3);
-    playRound(s, "p1"); // 900-900
+    playRound(s, "p1"); // 700-700
     advance(s, { now: 2000 });
     tick(s, 2000 + 4001); tick(s, 2000 + 7002);
-    playRound(s, "p2", 3000); // 900-900, gana p2 el desempate de ronda
+    playRound(s, "p2", 3000); // 700-700, gana p2 el desempate de ronda
     advance(s, { now: 4000 });
     tick(s, 4000 + 4001); tick(s, 4000 + 7002);
     playRound(s, "p1", 5000);
@@ -515,8 +544,8 @@ describe("fin de partida y revancha", () => {
     assert.equal(advance(s, { now: 6000 }).ok, true);
     assert.equal(s.phase, "gameOver");
     assert.equal(s.podium.length, 2);
-    assert.equal(s.winner, "p1"); // 2700-2700: gana el primero en orden
-    assert.deepEqual(s.players.map((p) => p.score), [2700, 2700]);
+    assert.equal(s.winner, "p1"); // 2100-2100: gana el primero en orden
+    assert.deepEqual(s.players.map((p) => p.score), [2100, 2100]);
   });
 
   it("la revancha NO pasa por ready: arranca directo en la ruleta", () => {
@@ -590,7 +619,7 @@ describe("puerta de Continuar entre rondas", () => {
     assert.equal(setContinue(s, "p2", { now: 6000 }).ok, true);
     assert.equal(s.phase, "gameOver");
     assert.equal(s.winner, "p1");
-    assert.deepEqual(s.players.map((p) => p.score), [2700, 2700]);
+    assert.deepEqual(s.players.map((p) => p.score), [2100, 2100]);
   });
 
   it("Continuar fuera de roundEnd falla", () => {
@@ -643,8 +672,8 @@ describe("estado público (privacidad)", () => {
     // Mis propias respuestas sí las veo yo.
     assert.equal(pubP1.myAnswers.nombre, p1Word);
     // Pero sí se ve el progreso (conteo, sin palabras).
-    assert.equal(pubP1.progress.p1, 9);
-    assert.equal(pubP1.progress.p2, 9);
+    assert.equal(pubP1.progress.p1, 7);
+    assert.equal(pubP1.progress.p2, 7);
   });
 
   it("en roundEnd sí se revelan todas las respuestas ya juzgadas", () => {
@@ -652,7 +681,107 @@ describe("estado público (privacidad)", () => {
     playRound(s, "p1");
     const pub = publicState(s, "p1");
     assert.ok(pub.results, "en roundEnd debe haber resultados");
-    assert.equal(pub.results.p1.answers.length, 9);
-    assert.equal(pub.results.p2.answers.length, 9);
+    assert.equal(pub.results.p1.answers.length, 7);
+    assert.equal(pub.results.p2.answers.length, 7);
+  });
+});
+
+describe("jugadores desconectados (?v=8, A1)", () => {
+  it("la puerta Continuar avanza con solo los conectados", () => {
+    const s = writingGame();
+    playRound(s, "p1");
+    assert.equal(s.phase, "roundEnd");
+    markDisconnected(s, "p2", 2000);
+    assert.equal(setContinue(s, "p1", { now: 2000 }).ok, true);
+    assert.equal(s.phase, "roulette");
+    assert.equal(s.round, 2);
+  });
+
+  it("la puerta ¡Listo! arranca con solo los conectados", () => {
+    const s = createGame("ABCD", { totalRounds: 3 });
+    addPlayer(s, "Tato");
+    addPlayer(s, "Ledya");
+    maybeEnterReady(s);
+    assert.equal(s.phase, "ready");
+    markDisconnected(s, "p2", 1000);
+    assert.equal(setReady(s, "p1", { now: 1000 }).ok, true);
+    assert.equal(s.phase, "roulette");
+  });
+
+  it("al reconectar, el jugador vuelve a contar para las puertas", () => {
+    const s = writingGame();
+    playRound(s, "p1");
+    markDisconnected(s, "p2", 2000);
+    // p1 avanza solo…
+    assert.equal(setContinue(s, "p1", { now: 2000 }).ok, true);
+    assert.equal(s.phase, "roulette");
+    // …y p2 reconecta a mitad de la ronda 2 sin perder su marcador.
+    markConnected(s, "p2");
+    assert.equal(publicState(s, "p2").players.find((p) => p.id === "p2").connected, true);
+    assert.equal(s.players.find((p) => p.id === "p2").score, 700);
+  });
+
+  it("a los 5 min el desconectado se purga entre rondas", () => {
+    const s = writingGame();
+    playRound(s, "p1");
+    markDisconnected(s, "p2", 2000);
+    assert.equal(tick(s, 2000 + DISCONNECT_PURGE_MS + 1), true);
+    assert.equal(s.players.length, 1);
+    assert.equal(s.players[0].id, "p1");
+  });
+
+  it("en plena ronda NO se purga (puede estar reconectando)", () => {
+    const s = writingGame();
+    markDisconnected(s, "p2", 1000);
+    // 5 min después la ronda ya se congeló (3 min), pero p2 sigue en la
+    // sala: la purga solo corre entre rondas.
+    assert.equal(tick(s, 1000 + DISCONNECT_PURGE_MS + 1), true); // se congela
+    assert.equal(s.phase, "bonus");
+    assert.equal(s.players.length, 2);
+  });
+
+  it("publicState marca quién está conectado", () => {
+    const s = writingGame();
+    markDisconnected(s, "p2", 1000);
+    const pub = publicState(s, "p1");
+    assert.equal(pub.players.find((p) => p.id === "p1").connected, true);
+    assert.equal(pub.players.find((p) => p.id === "p2").connected, false);
+  });
+});
+
+describe("bonus con límite de 60 s (?v=8, A2)", () => {
+  it("al congelar, el bonus tiene deadline de 60 s", () => {
+    const s = writingGame();
+    fillPlayer(s, "p1", 0);
+    fillPlayer(s, "p2", 1);
+    const freezeAt = s.deadline + 1;
+    tick(s, freezeAt);
+    assert.equal(s.phase, "bonus");
+    assert.equal(s.deadline, freezeAt + BONUS_MS);
+  });
+
+  it("si nadie oprime ¡BASTA! en el bonus, la ronda se cierra sola", () => {
+    const s = writingGame();
+    fillPlayer(s, "p1", 0);
+    fillPlayer(s, "p2", 1);
+    tick(s, s.deadline + 1);
+    assert.equal(s.phase, "bonus");
+    submitBonusAnswer(s, "p1", "superman");
+    submitBonusAnswer(s, "p2", "batman");
+    tick(s, s.deadline + 1);
+    assert.equal(s.phase, "roundEnd");
+    assert.equal(s.roundPoints.p1, 800); // 700 congelados + 100 bonus
+    assert.equal(s.roundPoints.p2, 800);
+  });
+
+  it("si nadie escribe nada en el bonus, se cierra con lo congelado", () => {
+    const s = writingGame();
+    fillPlayer(s, "p1", 0);
+    fillPlayer(s, "p2", 1);
+    tick(s, s.deadline + 1);
+    tick(s, s.deadline + 1);
+    assert.equal(s.phase, "roundEnd");
+    assert.equal(s.roundPoints.p1, 700);
+    assert.equal(s.roundPoints.p2, 700);
   });
 });

@@ -1219,7 +1219,17 @@
     "coyote",
     "cuervo",
     "culebra",
-    "camaleón"
+    "camaleón",
+    "calamar",
+    "caimán",
+    "cotorra",
+    "codorniz",
+    "cordero",
+    "cuco",
+    "chivo",
+    "chango",
+    "chimpancé",
+    "chita"
    ],
    "d": [
     "delfín",
@@ -1372,13 +1382,15 @@
     "pez",
     "perico",
     "pelícano",
-    "pulpo"
+    "pulpo",
+    "perra"
    ],
    "q": [
     "quetzal",
     "quirquincho",
     "quokka",
-    "quelea"
+    "quelea",
+    "quebrantahuesos"
    ],
    "r": [
     "rata",
@@ -1438,13 +1450,15 @@
     "wallaby",
     "wombat",
     "wapití",
-    "walabí"
+    "walabí",
+    "weimaraner"
    ],
    "x": [
     "xoloitzcuintle",
     "xenopus",
     "xerus",
-    "xifio"
+    "xifio",
+    "xolo"
    ],
    "y": [
     "yak",
@@ -1701,7 +1715,8 @@
    "y": [
     "yaca",
     "yuzu",
-    "yangmei"
+    "yangmei",
+    "yuca"
    ],
    "z": [
     "zapote",
@@ -1950,7 +1965,8 @@
    ],
    "u": [
     "uchepos",
-    "udon"
+    "udon",
+    "uvas pasas"
    ],
    "v": [
     "volcán de chocolate",
@@ -1982,316 +1998,8 @@
    "z": [
     "zarzuela",
     "zamburiñas",
-    "ziti"
-   ]
-  },
-  "profesion": {
-   "a": [
-    "abogado",
-    "arquitecto",
-    "albañil",
-    "actor",
-    "astronauta",
-    "administrador",
-    "agrónomo",
-    "anestesista",
-    "arqueólogo",
-    "artista",
-    "asesor",
-    "auditor",
-    "analista",
-    "agente",
-    "alfarero",
-    "artesano",
-    "aviador",
-    "auxiliar"
-   ],
-   "b": [
-    "barbero",
-    "banquero",
-    "bailarín",
-    "bibliotecario",
-    "biólogo",
-    "bombero",
-    "bartender",
-    "barista",
-    "botánico",
-    "boxeador",
-    "bioquímico",
-    "bordador",
-    "buzo"
-   ],
-   "c": [
-    "carpintero",
-    "cocinero",
-    "cantante",
-    "carnicero",
-    "científico",
-    "contador",
-    "conductor",
-    "constructor",
-    "conserje",
-    "consultor",
-    "cosmetóloga",
-    "costurera",
-    "cuidador",
-    "cajero",
-    "camarero",
-    "cirujano",
-    "comediante",
-    "corredor",
-    "curador"
-   ],
-   "d": [
-    "dentista",
-    "diseñador",
-    "detective",
-    "doctor",
-    "director",
-    "dermatólogo",
-    "dibujante",
-    "diplomático",
-    "decorador",
-    "deportista"
-   ],
-   "e": [
-    "electricista",
-    "enfermero",
-    "escritor",
-    "economista",
-    "editor",
-    "entrenador",
-    "embajador",
-    "escultor",
-    "estilista",
-    "esteticista",
-    "epidemiólogo",
-    "encuestador"
-   ],
-   "f": [
-    "farmacéutico",
-    "fotógrafo",
-    "fontanero",
-    "fisioterapeuta",
-    "florista",
-    "futbolista",
-    "filósofo",
-    "físico",
-    "forense",
-    "frutero",
-    "fabricante"
-   ],
-   "g": [
-    "granjero",
-    "guardia",
-    "gerente",
-    "ginecólogo",
-    "geólogo",
-    "guionista",
-    "guía turístico",
-    "ganadero",
-    "gastrónomo",
-    "grabador",
-    "guardaespaldas"
-   ],
-   "h": [
-    "herrero",
-    "historiador",
-    "heladero",
-    "higienista",
-    "hojalatero",
-    "humorista",
-    "homeópata",
-    "hipnoterapeuta",
-    "higienista dental"
-   ],
-   "i": [
-    "ingeniero",
-    "intérprete",
-    "investigador",
-    "inspector",
-    "ilustrador",
-    "inmunólogo",
-    "informático",
-    "instructor",
-    "inventor",
-    "instalador",
-    "internista"
-   ],
-   "j": [
-    "jardinero",
-    "joyero",
-    "juez",
-    "jefe",
-    "jinete",
-    "jugador",
-    "jefe de cocina",
-    "joyera"
-   ],
-   "k": [
-    "karateca",
-    "kinesiólogo",
-    "kiosquero"
-   ],
-   "l": [
-    "locutor",
-    "lechero",
-    "licenciado",
-    "librero",
-    "limpiador",
-    "logopeda",
-    "luchador",
-    "laboratorista",
-    "lavandero",
-    "leñador"
-   ],
-   "m": [
-    "maestro",
-    "médico",
-    "mecánico",
-    "músico",
-    "mesero",
-    "marinero",
-    "matemático",
-    "minero",
-    "modelo",
-    "mozo",
-    "militar",
-    "modista",
-    "masajista",
-    "maquillador",
-    "mercadólogo",
-    "metalúrgico"
-   ],
-   "n": [
-    "nutriólogo",
-    "notario",
-    "niñera",
-    "neurocirujano",
-    "narrador",
-    "naturópata",
-    "negociante",
-    "novelista",
-    "navegante",
-    "neurocientífico"
-   ],
-   "o": [
-    "odontólogo",
-    "oculista",
-    "oficinista",
-    "operador",
-    "óptico",
-    "organizador",
-    "orfebre",
-    "ortopedista",
-    "oceanógrafo",
-    "oficial",
-    "obrero",
-    "obstetra"
-   ],
-   "p": [
-    "piloto",
-    "pintor",
-    "plomero",
-    "panadero",
-    "periodista",
-    "policía",
-    "profesor",
-    "programador",
-    "psicólogo",
-    "peluquero",
-    "pescador",
-    "poeta",
-    "portero",
-    "paramédico",
-    "pediatra",
-    "perfumista",
-    "productor",
-    "publicista",
-    "psiquiatra"
-   ],
-   "q": [
-    "químico",
-    "quiosquero",
-    "quiropráctico"
-   ],
-   "r": [
-    "reportero",
-    "radiólogo",
-    "recepcionista",
-    "repartidor",
-    "restaurador",
-    "repostero",
-    "rescatista",
-    "rotulista",
-    "realizador",
-    "radióloga",
-    "repostera",
-    "repartidora"
-   ],
-   "s": [
-    "sastre",
-    "soldador",
-    "secretario",
-    "sociólogo",
-    "supervisor",
-    "surfista",
-    "sommelier",
-    "saxofonista",
-    "sargento",
-    "salvavidas",
-    "senador",
-    "soldado"
-   ],
-   "t": [
-    "taxista",
-    "técnico",
-    "tendero",
-    "terapeuta",
-    "tornero",
-    "traductor",
-    "trabajador social",
-    "trapecista",
-    "trompetista",
-    "topógrafo",
-    "tallador"
-   ],
-   "u": [
-    "urólogo",
-    "ujier",
-    "urbanista",
-    "utilero"
-   ],
-   "v": [
-    "vendedor",
-    "veterinario",
-    "vigilante",
-    "violinista",
-    "viticultor",
-    "verdulero",
-    "velador",
-    "visitador médico",
-    "vocalista",
-    "vidriero",
-    "vulcanólogo"
-   ],
-   "w": [
-    "waterpolista",
-    "webmaster"
-   ],
-   "x": [
-    "xilógrafo",
-    "xilofonista"
-   ],
-   "y": [
-    "yogui",
-    "youtuber",
-    "yudoca"
-   ],
-   "z": [
-    "zapatero",
-    "zoólogo",
-    "zootecnista"
+    "ziti",
+    "zumo"
    ]
   },
   "cosa": {
@@ -2352,7 +2060,32 @@
     "colchón",
     "cometa",
     "cofre",
-    "cubo"
+    "cubo",
+    "caca",
+    "caja",
+    "caza",
+    "canasta",
+    "cajón",
+    "calcetín",
+    "calendario",
+    "candela",
+    "canoa",
+    "capa",
+    "cartel",
+    "cazuela",
+    "cerrojo",
+    "chaleco",
+    "chicle",
+    "chimenea",
+    "chamarra",
+    "chanclas",
+    "cinturón",
+    "collar",
+    "corbata",
+    "corona",
+    "crema",
+    "cuerda",
+    "cuna"
    ],
    "d": [
     "dado",
@@ -2546,7 +2279,8 @@
     "quena",
     "quesera",
     "quiosco",
-    "quemador"
+    "quemador",
+    "quinqué"
    ],
    "r": [
     "radio",
@@ -2608,7 +2342,8 @@
     "ukulele",
     "uniforme",
     "urna",
-    "utensilio"
+    "utensilio",
+    "usb"
    ],
    "v": [
     "vaso",
@@ -2630,7 +2365,8 @@
     "walkie-talkie",
     "webcam",
     "windsurf",
-    "wok"
+    "wok",
+    "wáter"
    ],
    "x": [
     "xilófono",
@@ -2650,355 +2386,6 @@
     "zarcillo",
     "zíper",
     "zarape"
-   ]
-  },
-  "pelicula": {
-   "a": [
-    "avatar",
-    "avengers",
-    "aladdín",
-    "amélie",
-    "alien",
-    "argo",
-    "anastasia",
-    "atrápame si puedes",
-    "alvin y las ardillas",
-    "alicia en el país de las maravillas",
-    "animales fantásticos",
-    "aquaman",
-    "ant-man",
-    "apolo 13"
-   ],
-   "b": [
-    "batman",
-    "barbie",
-    "brave",
-    "buscando a nemo",
-    "breaking bad",
-    "better call saul",
-    "black panther",
-    "bohemian rhapsody",
-    "blancanieves",
-    "bambi",
-    "beetlejuice",
-    "big hero 6",
-    "birdman",
-    "braveheart",
-    "brooklyn nine-nine",
-    "bob esponja",
-    "blade runner"
-   ],
-   "c": [
-    "coco",
-    "cars",
-    "cenicienta",
-    "coraline",
-    "casablanca",
-    "crepúsculo",
-    "capitán américa",
-    "cobra kai",
-    "cazafantasmas",
-    "charlie y la fábrica de chocolate",
-    "cómo entrenar a tu dragón",
-    "crónicas de narnia",
-    "cruella"
-   ],
-   "d": [
-    "dumbo",
-    "deadpool",
-    "dune",
-    "django",
-    "descendientes",
-    "doctor strange",
-    "día de la independencia",
-    "dora la exploradora",
-    "distrito 9",
-    "duro de matar",
-    "doraemon",
-    "daredevil",
-    "dexter",
-    "divergente",
-    "dunkerque"
-   ],
-   "e": [
-    "encanto",
-    "e.t.",
-    "el rey león",
-    "el padrino",
-    "el chavo del 8",
-    "el señor de los anillos",
-    "enredados",
-    "euphoria",
-    "élite",
-    "el juego del calamar",
-    "el hobbit",
-    "el exorcista",
-    "el diario de bridget jones",
-    "el laberinto del fauno",
-    "el resplandor"
-   ],
-   "f": [
-    "frozen",
-    "forrest gump",
-    "friends",
-    "fast and furious",
-    "frankenstein",
-    "fargo",
-    "fleabag",
-    "freaky friday",
-    "ford v ferrari",
-    "la familia addams",
-    "fiebre de sábado por la noche"
-   ],
-   "g": [
-    "gladiator",
-    "gravity",
-    "game of thrones",
-    "grey's anatomy",
-    "ghostbusters",
-    "godzilla",
-    "guardianes de la galaxia",
-    "gru",
-    "grandes héroes",
-    "gossip girl",
-    "gilmore girls",
-    "gravity falls",
-    "good will hunting",
-    "gran hotel budapest",
-    "gremlins"
-   ],
-   "h": [
-    "harry potter",
-    "how i met your mother",
-    "hércules",
-    "hotel transylvania",
-    "hulk",
-    "hombre araña",
-    "house",
-    "hannibal",
-    "hombres de negro",
-    "hocus pocus",
-    "mi pobre angelito",
-    "hitch",
-    "historias cruzadas"
-   ],
-   "i": [
-    "inception",
-    "intensamente",
-    "interestelar",
-    "iron man",
-    "ice age",
-    "indiana jones",
-    "inside out",
-    "it",
-    "insidious",
-    "los increíbles",
-    "inspector gadget",
-    "isla de perros",
-    "invictus"
-   ],
-   "j": [
-    "jumanji",
-    "jurassic park",
-    "joker",
-    "juego de tronos",
-    "john wick",
-    "tiburón",
-    "jóvenes titanes",
-    "justice league",
-    "jane the virgin",
-    "jason bourne"
-   ],
-   "k": [
-    "karate kid",
-    "king kong",
-    "kung fu panda",
-    "kill bill",
-    "kubo",
-    "klaus",
-    "knives out"
-   ],
-   "l": [
-    "la la land",
-    "los increíbles",
-    "los simpson",
-    "la casa de papel",
-    "luca",
-    "lilo y stitch",
-    "la bella y la bestia",
-    "los vengadores",
-    "los juegos del hambre",
-    "lupin",
-    "loki",
-    "la sirenita",
-    "la máscara",
-    "las crónicas de narnia",
-    "los picapiedra"
-   ],
-   "m": [
-    "matrix",
-    "madagascar",
-    "maléfica",
-    "moana",
-    "monsters inc.",
-    "mulan",
-    "minions",
-    "misión imposible",
-    "merlina",
-    "modern family",
-    "mamma mia",
-    "matilda",
-    "mi villano favorito",
-    "monsters university",
-    "mortal kombat",
-    "malcolm el de en medio"
-   ],
-   "n": [
-    "narnia",
-    "narcos",
-    "nemo",
-    "national treasure",
-    "new girl",
-    "noche en el museo",
-    "notting hill",
-    "napoleón",
-    "nightmare before christmas"
-   ],
-   "o": [
-    "ocean's eleven",
-    "ozark",
-    "one piece",
-    "outlander",
-    "orgullo y prejuicio",
-    "once upon a time",
-    "oppenheimer",
-    "orange is the new black",
-    "once",
-    "oliver twist"
-   ],
-   "p": [
-    "piratas del caribe",
-    "pokémon",
-    "pinocho",
-    "paddington",
-    "parásitos",
-    "peter pan",
-    "peaky blinders",
-    "prison break",
-    "pulp fiction",
-    "planes",
-    "percy jackson",
-    "pantera negra",
-    "plaza sésamo",
-    "pretty little liars",
-    "paw patrol",
-    "peppa pig"
-   ],
-   "q": [
-    "qué pasó ayer",
-    "quién engañó a roger rabbit",
-    "quinto elemento",
-    "quiet place"
-   ],
-   "r": [
-    "ratatouille",
-    "rocky",
-    "raya y el último dragón",
-    "rick y morty",
-    "rápido y furioso",
-    "rebelde",
-    "rogue one",
-    "robots",
-    "red",
-    "río",
-    "robin hood"
-   ],
-   "s": [
-    "shrek",
-    "spider-man",
-    "star wars",
-    "stranger things",
-    "soul",
-    "scooby-doo",
-    "saw",
-    "scream",
-    "sherlock",
-    "súper mario bros",
-    "supercampeones",
-    "succession",
-    "sex education",
-    "sandman",
-    "shazam",
-    "solo en casa",
-    "spirit",
-    "stuart little"
-   ],
-   "t": [
-    "titanic",
-    "toy story",
-    "thor",
-    "transformers",
-    "tarzán",
-    "terminator",
-    "the office",
-    "the walking dead",
-    "tom y jerry",
-    "trolls",
-    "ted lasso",
-    "top gun",
-    "tres metros sobre el cielo",
-    "turbo",
-    "the big bang theory",
-    "tortugas ninja"
-   ],
-   "u": [
-    "up",
-    "un lugar en silencio",
-    "una noche en el museo",
-    "underworld",
-    "utopía"
-   ],
-   "v": [
-    "vengadores",
-    "vecinos",
-    "venom",
-    "vaiana",
-    "valiente",
-    "v de vendetta",
-    "vikingos",
-    "volver al futuro",
-    "violetta",
-    "vampirina"
-   ],
-   "w": [
-    "wonder woman",
-    "wall-e",
-    "warcraft",
-    "willy wonka",
-    "west side story",
-    "wicked",
-    "wonka",
-    "wolverine"
-   ],
-   "x": [
-    "x-men",
-    "x-men orígenes",
-    "x-men días del futuro pasado",
-    "x-men apocalipsis"
-   ],
-   "y": [
-    "y tú mamá también",
-    "yogi bear",
-    "your name",
-    "yellowstone",
-    "you"
-   ],
-   "z": [
-    "zootopia",
-    "zombieland",
-    "zoolander",
-    "zorro",
-    "zero dark thirty"
    ]
   }
  },

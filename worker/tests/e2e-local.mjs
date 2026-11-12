@@ -28,7 +28,7 @@ const { loadApp } = require("../../tests-client/load-app.cjs");
 const BASE = "http://127.0.0.1:8787";
 const CATEGORIES = [
   "nombre", "apellido", "ciudad", "animal", "fruta",
-  "comida", "profesion", "cosa", "pelicula",
+  "comida", "cosa",
 ];
 
 function wordsFor(letter, idx = 0) {
@@ -144,11 +144,11 @@ check(
   tato.lastState.myAnswers.nombre === w1t.nombre,
   "Tato sí ve sus propias respuestas",
 );
-check(tato.lastState.progress.p1 === 9, "progreso de Tato: 9/9");
+check(tato.lastState.progress.p1 === 7, "progreso de Tato: 7/7");
 tato.send({ type: "basta", answers: w1t });
 s = await tato.waitFor((x) => x.phase === "roundEnd", "fin ronda 1");
 check(s.bastaBy === "p1", "¡BASTA! lo cantó Tato");
-check(s.roundPoints.p1 === 900 && s.roundPoints.p2 === 900, `puntos ronda 1: Tato ${s.roundPoints.p1}, Ledya ${s.roundPoints.p2} (900 = 9 únicas)`);
+check(s.roundPoints.p1 === 700 && s.roundPoints.p2 === 700, `puntos ronda 1: Tato ${s.roundPoints.p1}, Ledya ${s.roundPoints.p2} (700 = 7 únicas)`);
 check(s.roundWinner === "p1", "Tato gana la ronda 1 (empate, desempate: cantó ¡BASTA!)");
 check(sameState(tato.lastState, ledya.lastState), "los dos clientes ven el mismo estado");
 
@@ -157,8 +157,8 @@ check(sameState(tato.lastState, ledya.lastState), "los dos clientes ven el mismo
   const text = BASTA.buildRoundEndAnnouncement(s);
   console.log(`  Anuncio de voz ronda 1: "${text}"`);
   const winnerName = s.players.find((p) => p.id === s.roundWinner).name;
-  check(text.includes(`El ganador de la ronda es ${winnerName}, con 900 puntos.`), "el anuncio nombra al ganador con sus puntos DE LA RONDA (900)");
-  check(text.includes("En segundo lugar, Ledya, con 900 puntos."), "el anuncio nombra el 2º lugar con su TOTAL acumulado (900)");
+  check(text.includes(`El ganador de la ronda es ${winnerName}, con 700 puntos.`), "el anuncio nombra al ganador con sus puntos DE LA RONDA (700)");
+  check(text.includes("En segundo lugar, Ledya, con 700 puntos."), "el anuncio nombra el 2º lugar con su TOTAL acumulado (700)");
   check(!text.includes("tercer"), "con 2 jugadores el anuncio NO menciona tercer lugar");
 }
 tato.send({ type: "continue" });
@@ -187,13 +187,13 @@ check(s.bastaBy === "p2", "¡BASTA! lo cantó Ledya");
 // Ledya queda bloqueada durante la gracia; Tato termina con su ¡BASTA!
 tato.send({ type: "basta", answers: w2t });
 s = await tato.waitFor((x) => x.phase === "roundEnd", "fin ronda 2");
-check(s.roundWinner === "p2", "Ledya gana la ronda 2 (empate 900-900, desempate: cantó ¡BASTA!)");
-check(s.roundPoints.p1 === 900 && s.roundPoints.p2 === 900, "puntos ronda 2: 900-900");
+check(s.roundWinner === "p2", "Ledya gana la ronda 2 (empate 700-700, desempate: cantó ¡BASTA!)");
+check(s.roundPoints.p1 === 700 && s.roundPoints.p2 === 700, "puntos ronda 2: 700-700");
 {
   const text = BASTA.buildRoundEndAnnouncement(s);
   console.log(`  Anuncio de voz ronda 2: "${text}"`);
-  check(text.includes("El ganador de la ronda es Ledya, con 900 puntos."), "anuncio ronda 2: ganadora Ledya, 900 pts de ronda");
-  check(text.includes("En segundo lugar, Tato, con 1800 puntos."), "anuncio ronda 2: 2º Tato con TOTAL acumulado 1800");
+  check(text.includes("El ganador de la ronda es Ledya, con 700 puntos."), "anuncio ronda 2: ganadora Ledya, 700 pts de ronda");
+  check(text.includes("En segundo lugar, Tato, con 1400 puntos."), "anuncio ronda 2: 2º Tato con TOTAL acumulado 1400");
 }
 // Puerta de Continuar: con solo Tato no avanza; con los 2, sí.
 tato.send({ type: "continue" });
@@ -211,20 +211,20 @@ ledya.send({ type: "answers", answers: w3l });
 await new Promise((r) => setTimeout(r, 500));
 tato.send({ type: "basta", answers: w3t });
 s = await tato.waitFor((x) => x.phase === "roundEnd", "fin ronda 3");
-check(s.roundPoints.p1 === 900, "puntos ronda 3: Tato 900");
+check(s.roundPoints.p1 === 700, "puntos ronda 3: Tato 700");
 // Última ronda: la puerta de Continuar también aplica para ver el podio.
 tato.send({ type: "continue" });
 ledya.send({ type: "continue" });
 s = await tato.waitFor((x) => x.phase === "gameOver", "podio final");
 console.log(`\nPodio: ${s.podium.map((id) => s.players.find((p) => p.id === id).name).join(" > ")}`);
-check(s.winner === "p1", "ganador del juego: Tato (2700-2700, primero en orden)");
+check(s.winner === "p1", "ganador del juego: Tato (2100-2100, primero en orden)");
 check(s.podium.length === 2, "podio con los 2 jugadores");
-check(s.players.every((p) => p.score === 2700), "marcador final: 2700-2700");
+check(s.players.every((p) => p.score === 2100), "marcador final: 2100-2100");
 {
   const text = BASTA.buildGameOverAnnouncement(s);
   console.log(`  Anuncio de voz final: "${text}"`);
-  check(text.includes("¡El ganador del juego es Tato, con 2700 puntos!"), "anuncio final: ganador Tato con su total 2700");
-  check(text.includes("En segundo lugar, Ledya, con 2700 puntos."), "anuncio final: 2º Ledya con 2700");
+  check(text.includes("¡El ganador del juego es Tato, con 2100 puntos!"), "anuncio final: ganador Tato con su total 2100");
+  check(text.includes("En segundo lugar, Ledya, con 2100 puntos."), "anuncio final: 2º Ledya con 2100");
 }
 
 // GET /api/room debe devolver el mismo estado

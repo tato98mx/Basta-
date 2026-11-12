@@ -24,9 +24,7 @@ export const CATEGORIES = [
   { id: "animal", label: "Animal", article: "un", noun: "animal" },
   { id: "fruta", label: "Fruta o Verdura", article: "una", noun: "fruta o verdura" },
   { id: "comida", label: "Comida", article: "una", noun: "comida" },
-  { id: "profesion", label: "Profesión o trabajo", article: "una", noun: "profesión o trabajo" },
   { id: "cosa", label: "Cosa / Objeto", article: "una", noun: "cosa u objeto" },
-  { id: "pelicula", label: "Película o Serie", article: "una", noun: "película o serie" },
 ] as const;
 export type CategoryId = (typeof CATEGORIES)[number]["id"];
 export const CATEGORY_IDS = CATEGORIES.map((c) => c.id) as CategoryId[];
@@ -53,6 +51,14 @@ export const ROULETTE_MS = 4_000; // ruleta de la letra: ~4 s
 export const COUNTDOWN_MS = 3_000; // cuenta atrás 3-2-1: 3 s
 export const FREEZE_MS = 180_000; // sin límite de escritura, pero a los 3 min se congela
 export const GRACE_MS = 5_000; // gracia del ganador anterior: 5 s
+export const BONUS_MS = 60_000; // ?v=8 (A2): la fase bonus también tiene límite:
+// si nadie oprime ¡BASTA! con su palabra bonus en 60 s, la ronda se
+// cierra sola con lo que cada quien haya escrito (antes deadline=null y
+// la partida podía quedarse colgada para siempre).
+export const DISCONNECT_PURGE_MS = 300_000; // ?v=8 (A1): un jugador
+// desconectado se saca de la sala a los 5 min (libera su asiento); las
+// puertas de "¡Listo!" y "Continuar" solo cuentan jugadores CONECTADOS,
+// así que un desconectado ya no bloquea la partida ni un minuto.
 
 export const POINTS_UNIQUE = 100;
 export const POINTS_REPEATED = 50;
@@ -80,6 +86,10 @@ export interface PlayerState {
   ready: boolean;
   /** Tocó "Continuar" en fin de ronda (puerta entre rondas). */
   continued: boolean;
+  /** ?v=8 (A1): marca de tiempo (ms) en que se le cayó la conexión, o null
+   *  si está conectado. Las puertas solo cuentan conectados y a los 5 min
+   *  el jugador se purga de la sala (ver tick). */
+  disconnectedAt: number | null;
 }
 
 export interface JudgedAnswer {
@@ -207,14 +217,22 @@ export function dictionaryStats(): {
   return { main, bonus, perCategory };
 }
 
-/** Busca la entrada canónica de `word` en una lista (exacta o typo ≤1). */
+/** Busca la entrada canónica de `word` en una lista (exacta o typo ≤1).
+ *  Regla anti-colisión (?v=8, partida real 2026-11-11): en palabras CORTAS
+ *  una diferencia de 1 letra casi siempre es OTRA palabra, no un typo
+ *  ("caca" y "caja" caían a 1 letra de "cama" —primera entrada de Cosa/C—
+ *  y ambas valían 50 de repetida siendo distintas). Por eso el fuzzy solo aplica cuando la diferencia es
+ *  por inserción/borrado (longitud distinta, p. ej. "ratta" → "rata") o la
+ *  palabra tiene 6+ letras (un typo de 1 letra en palabra larga). */
 function findCanonical(normalized: string, entries: string[]): string | null {
   for (const e of entries) {
     if (normalizeAnswer(e) === normalized) return normalizeAnswer(e);
   }
   for (const e of entries) {
-    if (levenshtein(normalizeAnswer(e), normalized) <= 1) {
-      return normalizeAnswer(e);
+    const canon = normalizeAnswer(e);
+    if (levenshtein(canon, normalized) <= 1 &&
+        (canon.length !== normalized.length || normalized.length >= 6)) {
+      return canon;
     }
   }
   return null;
@@ -227,7 +245,7 @@ export interface JudgeResult {
 }
 
 /**
- * Juez de una respuesta de las 9 categorías (servidor, autoritativo).
+ * Juez de una respuesta de las 7 categorías (servidor, autoritativo).
  * Válida solo si empieza con la letra de la ronda Y pertenece a la
  * categoría según el diccionario. Tolera typos de 1 letra (Levenshtein ≤1).
  * `letter` es la letra de la ronda (A-Z); si es null no se exige letra
@@ -266,7 +284,7 @@ export function judgeAnswer(
     }
     return { valid: false, canonical: null, reason: "No está en el diccionario del juego" };
   }
-  // Sin letra (no se usa en las 9 categorías; el bonus usa judgeBonus).
+  // Sin letra (no se usa en las 7 categorías; el bonus usa judgeBonus).
   return { valid: false, canonical: null, reason: "No está en el diccionario del juego" };
 }
 
@@ -345,7 +363,7 @@ export function addPlayer(state: GameState, name: string): string | null {
   if (!clean) return null;
   if (state.players.length >= MAX_PLAYERS) return null;
   const id = `p${state.players.length + 1}`;
-  state.players.push({ id, name: clean, score: 0, ready: false, continued: false });
+  state.players.push({ id, name: clean, score: 0, ready: false, continued: false, disconnectedAt: null });
   state.answers[id] = {};
   state.bonusAnswers[id] = "";
   return id;
@@ -353,6 +371,27 @@ export function addPlayer(state: GameState, name: string): string | null {
 
 export function playerById(state: GameState, playerId: string): PlayerState | undefined {
   return state.players.find((p) => p.id === playerId);
+}
+
+/** Jugadores con la conexión activa (?v=8, A1). Las puertas de "¡Listo!"
+ *  y "Continuar" solo cuentan a estos: si a alguien se le cae el internet
+ *  en el móvil, la partida no se queda esperando eternamente. */
+export function connectedPlayers(state: GameState): PlayerState[] {
+  return state.players.filter((p) => p.disconnectedAt === null);
+}
+
+/** Marca a un jugador como desconectado (lo llama el DO al cerrarse su
+ *  socket). No borra nada: si reconecta antes de la purga, sigue en la
+ *  partida con sus respuestas y puntos. */
+export function markDisconnected(state: GameState, playerId: string, now: number = Date.now()): void {
+  const p = playerById(state, playerId);
+  if (p && p.disconnectedAt === null) p.disconnectedAt = now;
+}
+
+/** Al reconectar, el jugador vuelve a contar para las puertas. */
+export function markConnected(state: GameState, playerId: string): void {
+  const p = playerById(state, playerId);
+  if (p) p.disconnectedAt = null;
 }
 
 /** ¿La sala ya puede pasar a "ready"? (al entrar el 2º jugador). */
@@ -394,11 +433,13 @@ function beginRound(state: GameState, now: number, rng: Rng): void {
   state.deadline = now + ROULETTE_MS;
 }
 
-/** Arranca la partida desde "ready": requiere TODOS listos y 2+ jugadores. */
+/** Arranca la partida desde "ready": requiere TODOS los CONECTADOS listos
+ *  y 2+ jugadores conectados (?v=8, A1: un desconectado no bloquea). */
 export function startGame(state: GameState, opts: StartOptions = {}): ActionResult {
   if (state.phase !== "ready") return fail("La partida no está en fase de listos.");
   if (state.players.length < 2) return fail("Faltan jugadores para empezar.");
-  if (!state.players.every((p) => p.ready)) {
+  const connected = connectedPlayers(state);
+  if (!connected.every((p) => p.ready)) {
     return fail("Todavía no están todos listos.");
   }
   const rng = opts.rng ?? defaultRng;
@@ -422,16 +463,18 @@ export function setReady(
   const player = playerById(state, playerId);
   if (!player) return fail("Jugador desconocido.");
   player.ready = true;
-  if (state.players.length >= 2 && state.players.every((p) => p.ready)) {
+  const connected = connectedPlayers(state);
+  if (connected.length >= 1 && connected.every((p) => p.ready)) {
     return startGame(state, opts);
   }
   return ok();
 }
 
 /** Un jugador oprime "Continuar" en fin de ronda. Cuando TODOS los
- *  jugadores actuales lo han tocado, se avanza a la siguiente ronda
- *  (ruleta) o al podio final si era la última. Sin límite de tiempo:
- *  si alguien no lo toca, la partida espera. */
+ *  jugadores CONECTADOS lo han tocado, se avanza a la siguiente ronda
+ *  (ruleta) o al podio final si era la última. ?v=8 (A1): un jugador
+ *  desconectado ya no bloquea la puerta (antes se esperaba eternamente
+ *  a alguien que cerró la pestaña o se quedó sin internet). */
 export function setContinue(
   state: GameState,
   playerId: string,
@@ -441,13 +484,14 @@ export function setContinue(
   const player = playerById(state, playerId);
   if (!player) return fail("Jugador desconocido.");
   player.continued = true;
-  if (state.players.length >= 2 && state.players.every((p) => p.continued)) {
+  const connected = connectedPlayers(state);
+  if (connected.length >= 1 && connected.every((p) => p.continued)) {
     return advance(state, opts);
   }
   return ok();
 }
 
-/** Puntúa las 9 respuestas de cada jugador (unicidad por canónica) y
+/** Puntúa las 7 respuestas de cada jugador (unicidad por canónica) y
  *  devuelve los puntos de la ronda por jugador. */
 function judgeMainAnswers(
   state: GameState,
@@ -554,8 +598,10 @@ function scoreRound(state: GameState): void {
 }
 
 /** Congelamiento (3 min en escritura): juzga las respuestas principales
- *  AHORA, guarda los puntos congelados y abre la categoría bonus. */
-function freezeRound(state: GameState): void {
+ *  AHORA, guarda los puntos congelados y abre la categoría bonus. ?v=8
+ *  (A2): el bonus tiene 60 s de límite (BONUS_MS); si nadie oprime
+ *  ¡BASTA!, tick() cierra la ronda solo con lo que haya escrito. */
+function freezeRound(state: GameState, now: number): void {
   const { results, roundPoints } = judgeMainAnswers(state);
   state.results = results;
   state.frozenPoints = { ...roundPoints };
@@ -563,7 +609,7 @@ function freezeRound(state: GameState): void {
   const idx = (state.round - 1) % BONUS_ROTATION.length;
   state.bonusCategory = BONUS_ROTATION[idx];
   state.phase = "bonus";
-  state.deadline = null;
+  state.deadline = now + BONUS_MS;
 }
 
 /** Puntúa la palabra bonus y cierra la ronda (congelado + bonus). */
@@ -669,7 +715,7 @@ export function submitBonusAnswer(
   return ok();
 }
 
-/** ¿Puede este jugador oprimir ¡BASTA! ahora? (las 9 casillas llenas, o la
+/** ¿Puede este jugador oprimir ¡BASTA! ahora? (las 7 casillas llenas, o la
  *  palabra bonus llena en fase bonus). El cliente deshabilita el botón con
  *  la misma regla; el servidor la vuelve a comprobar. */
 export function canBasta(state: GameState, playerId: string): boolean {
@@ -690,7 +736,7 @@ function allFilled(state: GameState, playerId: string): boolean {
 
 /**
  * ¡BASTA! — cierra la ronda.
- * - En escritura: el primero que lo oprime con las 9 llenas cierra para
+ * - En escritura: el primero que lo oprime con las 7 llenas cierra para
  *   todos. Si el ganador de la ronda anterior NO es quien oprimió, ese
  *   ganador tiene 5 s de gracia para terminar (fase "grace"); los demás
  *   quedan bloqueados de inmediato.
@@ -810,7 +856,19 @@ export function tick(
   now: number = Date.now(),
   rng: Rng = defaultRng,
 ): boolean {
-  if (state.deadline === null || now < state.deadline) return false;
+  // ?v=8 (A1): purga de desconectados. Solo entre rondas (lobby, ready,
+  // roundEnd, gameOver): en plena ronda el jugador puede estar
+  // reconectando y su asiento y sus respuestas se conservan; las puertas
+  // ya no lo esperan de todos modos (solo cuentan conectados).
+  let changed = false;
+  if (["lobby", "ready", "roundEnd", "gameOver"].includes(state.phase)) {
+    const before = state.players.length;
+    state.players = state.players.filter(
+      (p) => p.disconnectedAt === null || now - p.disconnectedAt <= DISCONNECT_PURGE_MS,
+    );
+    if (state.players.length !== before) changed = true;
+  }
+  if (state.deadline === null || now < state.deadline) return changed;
   switch (state.phase) {
     case "roulette": {
       state.phase = "countdown";
@@ -823,7 +881,7 @@ export function tick(
       return true;
     }
     case "writing": {
-      freezeRound(state);
+      freezeRound(state, now);
       return true;
     }
     case "grace": {
@@ -831,8 +889,14 @@ export function tick(
       scoreRound(state);
       return true;
     }
+    case "bonus": {
+      // ?v=8 (A2): se acabaron los 60 s del bonus sin ¡BASTA!: se cierra
+      // la ronda con lo congelado + lo que cada quien haya escrito.
+      scoreBonusRound(state);
+      return true;
+    }
     default:
-      return false;
+      return changed;
   }
 }
 
@@ -869,6 +933,7 @@ export function publicState(state: GameState, viewerId?: string): Record<string,
       score: p.score,
       ready: p.ready,
       continued: p.continued,
+      connected: p.disconnectedAt === null,
     })),
     totalRounds: state.totalRounds,
     round: state.round,

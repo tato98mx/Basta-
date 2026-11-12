@@ -192,35 +192,6 @@ D["comida"] = {
  "z": L("zarzuela,zamburiñas,ziti,zarzuela,zamburiñas,ziti,zarzuela,zamburiñas"),
 }
 
-D["profesion"] = {
- "a": L("abogado,arquitecto,albañil,actor,astronauta,administrador,agrónomo,anestesista,arqueólogo,artista,asesor,auditor,analista,agente,alfarero,artesano,aviador,auxiliar,abogado,arquitecto"),
- "b": L("barbero,banquero,bailarín,bibliotecario,biólogo,bombero,bartender,barista,botánico,boxeador,bioquímico,bordador,buzo,barbero,banquero,bailarín,bibliotecario,biólogo,bombero,bartender"),
- "c": L("carpintero,cocinero,cantante,carnicero,científico,contador,conductor,constructor,conserje,consultor,cosmetóloga,costurera,cuidador,cajero,camarero,cirujano,comediante,corredor,curador,carpintero"),
- "d": L("dentista,diseñador,detective,doctor,director,dermatólogo,dibujante,diplomático,decorador,deportista,dentista,diseñador,detective,doctor,director,dermatólogo,dibujante,diplomático"),
- "e": L("electricista,enfermero,escritor,economista,editor,entrenador,embajador,escultor,estilista,esteticista,epidemiólogo,encuestador,electricista,enfermero,escritor,economista,editor,entrenador,embajador,escultor"),
- "f": L("farmacéutico,fotógrafo,fontanero,fisioterapeuta,florista,futbolista,filósofo,físico,forense,frutero,fabricante,farmacéutico,fotógrafo,fontanero,fisioterapeuta,florista,futbolista,filósofo,físico,forense"),
- "g": L("granjero,guardia,gerente,ginecólogo,geólogo,guionista,guía turístico,ganadero,gastrónomo,grabador,guardaespaldas,granjero,guardia,gerente,ginecólogo,geólogo,guionista,guía turístico,ganadero,gastrónomo"),
- "h": L("herrero,historiador,heladero,higienista,hojalatero,humorista,homeópata,herrero,historiador,heladero,higienista,hojalatero,humorista,homeópata"),
- "i": L("ingeniero,intérprete,investigador,inspector,ilustrador,inmunólogo,informático,instructor,inventor,instalador,internista,ingeniero,intérprete,investigador,inspector,ilustrador,inmunólogo,informático,instructor,inventor"),
- "j": L("jardinero,joyero,juez,jefe,jinete,jugador,jardinero,joyero,juez,jefe,jinete,jugador,jardinero,joyero,juez,jefe"),
- "k": L("karateca,kinesiólogo,kiosquero,karateca,kinesiólogo,kiosquero"),
- "l": L("locutor,lechero,licenciado,librero,limpiador,logopeda,luchador,laboratorista,lavandero,leñador,locutor,lechero,licenciado,librero,limpiador,logopeda,luchador,laboratorista,lavandero,leñador"),
- "m": L("maestro,médico,mecánico,músico,mesero,marinero,matemático,minero,modelo,mozo,militar,modista,masajista,maquillador,mercadólogo,metalúrgico,maestro,médico,mecánico,músico,mesero"),
- "n": L("nutriólogo,notario,niñera,neurocirujano,narrador,naturópata,negociante,novelista,navegante,neurocientífico,nutriólogo,notario,niñera,neurocirujano,narrador,naturópata,negociante,novelista"),
- "o": L("odontólogo,oculista,oficinista,operador,óptico,organizador,orfebre,ortopedista,oceanógrafo,oficial,obrero,obstetra,odontólogo,oculista,oficinista,operador,óptico,organizador,orfebre,ortopedista"),
- "p": L("piloto,pintor,plomero,panadero,periodista,policía,profesor,programador,psicólogo,peluquero,pescador,poeta,portero,paramédico,pediatra,perfumista,productor,publicista,psiquiatra,piloto"),
- "q": L("químico,quiosquero,quiropráctico,químico,quiosquero,quiropráctico"),
- "r": L("reportero,radiólogo,recepcionista,repartidor,restaurador,repostero,rescatista,rotulista,realizador,reportero,radiólogo,recepcionista,repartidor,restaurador,repostero,rescatista,rotulista,realizador"),
- "s": L("sastre,soldador,secretario,sociólogo,supervisor,surfista,sommelier,saxofonista,sargento,salvavidas,senador,soldado,sastre,soldador,secretario,sociólogo,supervisor,surfista,sommelier,saxofonista"),
- "t": L("taxista,técnico,tendero,terapeuta,tornero,traductor,trabajador social,trapecista,trompetista,topógrafo,tallador,taxista,técnico,tendero,terapeuta,tornero,traductor,trabajador social,trapecista,trompetista,topógrafo"),
- "u": L("urólogo,ujier,urbanista,utilero,urólogo,ujier,urbanista,utilero"),
- "v": L("vendedor,veterinario,vigilante,violinista,viticultor,verdulero,velador,visitador médico,vocalista,vidriero,vulcanólogo,vendedor,veterinario,vigilante,violinista,viticultor,verdulero,velador,visitador médico"),
- "w": L("waterpolista,webmaster,waterpolista,webmaster"),
- "x": L("xilógrafo,xilofonista,xilógrafo,xilofonista"),
- "y": L("yogui,youtuber,yudoca,yogui,youtuber,yudoca"),
- "z": L("zapatero,zoólogo,zootecnista,zapatero,zoólogo,zootecnista"),
-}
-
 D["cosa"] = {
  "a": L("avión,auto,abanico,almohada,alfombra,anillo,antena,agenda,armario,arpa,aro,aspiradora,auriculares,abrelatas,alcancía,avión,auto,abanico,almohada,alfombra"),
  "b": L("bicicleta,balón,barco,botella,bolso,bombilla,brújula,bufanda,bastón,bate,baúl,bocina,boleto,bomba,borrador,bote,brocha,buzón,bicicleta,balón"),
@@ -248,35 +219,6 @@ D["cosa"] = {
  "x": L("xilófono,x-acto,xenón,xilófono,x-acto,xenón"),
  "y": L("yate,yelmo,yoyo,yeso,yunque,yate,yelmo,yoyo,yeso,yunque"),
  "z": L("zapato,zapatilla,zarcillo,zíper,zarape,zapato,zapatilla,zarcillo,zíper,zarape"),
-}
-
-D["pelicula"] = {
- "a": L("avatar,avengers,aladdín,amélie,alien,argo,anastasia,atrápame si puedes,alvin y las ardillas,avatar,avengers,aladdín,amélie,alien,argo,anastasia,atrápame si puedes,alvin y las ardillas,avatar"),
- "b": L("batman,barbie,brave,buscando a nemo,breaking bad,better call saul,black panther,bohemian rhapsody,blancanieves,bambi,beetlejuice,big hero 6,birdman,braveheart,brooklyn nine-nine,bob esponja,blade runner,batman,barbie,brave"),
- "c": L("coco,cars,cenicienta,coraline,casablanca,crepúsculo,capitán américa,cobra kai,cazafantasmas,charlie y la fábrica de chocolate,cómo entrenar a tu dragón,crónicas de narnia,cruella,coco,cars,cenicienta,coraline,casablanca,crepúsculo,capitán américa"),
- "d": L("dumbo,deadpool,dune,django,descendientes,doctor strange,día de la independencia,dora la exploradora,distrito 9,duro de matar,doraemon,daredevil,dexter,divergente,dunkerque,dumbo,deadpool,dune,django,descendientes"),
- "e": L("encanto,e.t.,el rey león,el padrino,el chavo del 8,el señor de los anillos,enredados,euphoria,élite,el juego del calamar,el hobbit,el exorcista,el diario de bridget jones,el laberinto del fauno,el resplandor,encanto,e.t.,el rey león,el padrino,el chavo del 8"),
- "f": L("frozen,forrest gump,friends,fast and furious,frankenstein,fargo,fleabag,freaky friday,ford v ferrari,frozen,forrest gump,friends,fast and furious,frankenstein,fargo,fleabag,freaky friday,ford v ferrari"),
- "g": L("gladiator,gravity,game of thrones,grey's anatomy,ghostbusters,godzilla,guardianes de la galaxia,gru,grandes héroes,gossip girl,gilmore girls,gravity falls,good will hunting,gran hotel budapest,gremlins,gladiator,gravity,game of thrones,grey's anatomy"),
- "h": L("harry potter,how i met your mother,hércules,hotel transylvania,hulk,hombre araña,house,hannibal,hombres de negro,hocus pocus,mi pobre angelito,hitch,historias cruzadas,harry potter,how i met your mother,hércules,hotel transylvania,hulk,hombre araña"),
- "i": L("inception,intensamente,interestelar,iron man,ice age,indiana jones,inside out,it,insidious,los increíbles,inspector gadget,isla de perros,invictus,inception,intensamente,interestelar,iron man,ice age,indiana jones,inside out"),
- "j": L("jumanji,jurassic park,joker,juego de tronos,john wick,tiburón,jóvenes titanes,justice league,jane the virgin,jumanji,jurassic park,joker,juego de tronos,john wick,tiburón,jóvenes titanes,justice league,jane the virgin"),
- "k": L("karate kid,king kong,kung fu panda,kill bill,kubo,klaus,knives out,karate kid,king kong,kung fu panda,kill bill,kubo,klaus,knives out"),
- "l": L("la la land,los increíbles,los simpson,la casa de papel,luca,lilo y stitch,la bella y la bestia,los vengadores,los juegos del hambre,lupin,loki,la sirenita,la máscara,las crónicas de narnia,los picapiedra,la la land,los increíbles,los simpson,la casa de papel,luca"),
- "m": L("matrix,madagascar,maléfica,moana,monsters inc.,mulan,minions,misión imposible,merlina,modern family,mamma mia,matilda,mi villano favorito,monsters university,mortal kombat,malcolm el de en medio,matrix,madagascar,maléfica,moana"),
- "n": L("narnia,narcos,nemo,national treasure,new girl,noche en el museo,notting hill,narnia,narcos,nemo,national treasure,new girl,noche en el museo,notting hill"),
- "o": L("ocean's eleven,ozark,one piece,outlander,orgullo y prejuicio,once upon a time,oppenheimer,orange is the new black,ocean's eleven,ozark,one piece,outlander,orgullo y prejuicio,once upon a time,oppenheimer"),
- "p": L("piratas del caribe,pokémon,pinocho,paddington,parásitos,peter pan,peaky blinders,prison break,pulp fiction,planes,percy jackson,pantera negra,plaza sésamo,pretty little liars,paw patrol,peppa pig,piratas del caribe,pokémon,pinocho,paddington"),
- "q": L("qué pasó ayer,quién engañó a roger rabbit,quinto elemento,quiet place,qué pasó ayer,quién engañó a roger rabbit,quinto elemento,quiet place"),
- "r": L("ratatouille,rocky,raya y el último dragón,rick y morty,rápido y furioso,rebelde,rogue one,robots,red,río,robin hood,ratatouille,rocky,raya y el último dragón,rick y morty,rápido y furioso,rebelde,rogue one,robots,red,río"),
- "s": L("shrek,spider-man,star wars,stranger things,soul,scooby-doo,saw,scream,sherlock,súper mario bros,supercampeones,succession,sex education,sandman,shazam,solo en casa,spirit,stuart little,shrek,spider-man"),
- "t": L("titanic,toy story,thor,transformers,tarzán,terminator,the office,the walking dead,tom y jerry,trolls,ted lasso,top gun,tres metros sobre el cielo,turbo,the big bang theory,tortugas ninja,titanic,toy story,thor,transformers"),
- "u": L("up,un lugar en silencio,una noche en el museo,underworld,up,un lugar en silencio,una noche en el museo,underworld"),
- "v": L("vengadores,vecinos,venom,vaiana,valiente,v de vendetta,vikingos,volver al futuro,violetta,vampirina,venom,vengadores,vecinos,venom,vaiana,valiente,v de vendetta,vikingos,volver al futuro"),
- "w": L("wonder woman,wall-e,warcraft,willy wonka,west side story,wicked,wonka,wolverine,wonder woman,wall-e,warcraft,willy wonka,west side story,wicked,wonka,wolverine"),
- "x": L("x-men,x-men orígenes, x-men días del futuro pasado,x-men apocalipsis,x-men,x-men orígenes,x-men días del futuro pasado"),
- "y": L("y tú mamá también,yogi bear,your name,yellowstone,you,y tú mamá también,yogi bear,your name,yellowstone,you"),
- "z": L("zootopia,zombieland,zoolander,zorro,zero dark thirty,zootopia,zombieland,zoolander,zorro,zero dark thirty"),
 }
 
 BONUS = {
@@ -320,15 +262,6 @@ PATCH = {
  ("comida","v"): ["volcán de chocolate","vainilla","vinagreta","vitello"],
  ("comida","x"): ["xnipec","xoconostle"],
  ("comida","z"): ["zarzuela","zamburiñas","ziti"],
- ("profesion","k"): ["karateca","kinesiólogo","kiosquero"],
- ("profesion","q"): ["químico","quiosquero","quiropráctico"],
- ("profesion","u"): ["urólogo","ujier","urbanista","utilero"],
- ("profesion","w"): ["waterpolista","webmaster"],
- ("profesion","x"): ["xilógrafo","xilofonista"],
- ("profesion","y"): ["yogui","youtuber","yudoca"],
- ("profesion","z"): ["zapatero","zoólogo","zootecnista"],
- ("profesion","j"): ["jardinero","joyero","juez","jefe","jinete","jugador"],
- ("profesion","h"): ["herrero","historiador","heladero","higienista","hojalatero","humorista","homeópata"],
  ("cosa","f"): ["florero","foco","foto","fregadero","falda","flecha","flauta","folleto","fósforo","fuente","faro","frasco","freno","frigorífico"],
  ("cosa","n"): ["nevera","navaja","neumático","novela","nido"],
  ("cosa","o"): ["olla","oso de peluche","ordenador","oficina","organizador"],
@@ -342,17 +275,6 @@ PATCH = {
  ("cosa","k"): ["kimono","kiosco","kayak","kart","kettlebell","karaoke"],
  ("cosa","h"): ["hamaca","horno","hervidor","helicóptero","hacha","hilo","hoja","horquilla"],
  ("cosa","j"): ["jabón","jarra","joya","juguete","jarrón","jaula","jeringa","joyero","jersey","jabonera"],
- ("pelicula","n"): ["narnia","narcos","nemo","national treasure","new girl","noche en el museo","notting hill"],
- ("pelicula","q"): ["qué pasó ayer","quién engañó a roger rabbit","quinto elemento","quiet place"],
- ("pelicula","u"): ["up","un lugar en silencio","una noche en el museo","underworld","utopía"],
- ("pelicula","x"): ["x-men","x-men orígenes","x-men días del futuro pasado","x-men apocalipsis"],
- ("pelicula","y"): ["y tú mamá también","yogi bear","your name","yellowstone","you"],
- ("pelicula","z"): ["zootopia","zombieland","zoolander","zorro","zero dark thirty"],
- ("pelicula","k"): ["karate kid","king kong","kung fu panda","kill bill","kubo","klaus","knives out"],
- ("pelicula","o"): ["ocean's eleven","ozark","one piece","outlander","orgullo y prejuicio","once upon a time","oppenheimer","orange is the new black"],
- ("pelicula","f"): ["frozen","forrest gump","friends","fast and furious","frankenstein","fargo","fleabag","freaky friday","ford v ferrari"],
- ("pelicula","i"): ["inception","intensamente","interestelar","iron man","ice age","indiana jones","inside out","it","insidious","los increíbles","inspector gadget","isla de perros","invictus"],
- ("pelicula","j"): ["jumanji","jurassic park","joker","juego de tronos","john wick","tiburón","jóvenes titanes","justice league","jane the virgin"],
  ("ciudad","d"): ["dallas","denver","detroit","dublín","dubái","durango","dinamarca","damasco","dakar","delhi","dresde"],
  ("ciudad","f"): ["francia","finlandia","florencia","frankfurt","fresno","filadelfia","fiji","fargo","florianópolis","fort worth"],
  ("ciudad","e"): ["ecuador","egipto","españa","edimburgo","el paso","ensenada","edmonton","estambul","escocia","etiopía","el salvador","estrasburgo","essen","erie"],
@@ -458,17 +380,9 @@ PATCH2 = {
  ("apellido","o"): ["olguín","ortuño","oliva","orantes"],
  ("apellido","t"): ["tejada","tovar","trujillo","tirado"],
  ("apellido","i"): ["izquierdo","irala"],
- ("profesion","h"): ["hipnoterapeuta","higienista dental"],
- ("profesion","j"): ["jefe de cocina","joyera"],
- ("profesion","r"): ["radióloga","repostera","repartidora"],
  ("cosa","h"): ["hilo dental","hoja de afeitar","hucha"],
  ("cosa","n"): ["neceser","navaja suiza"],
  ("cosa","o"): ["orejeras","olla exprés"],
- ("pelicula","a"): ["alicia en el país de las maravillas","animales fantásticos","aquaman","ant-man","apolo 13"],
- ("pelicula","f"): ["la familia addams","fiebre de sábado por la noche"],
- ("pelicula","j"): ["jason bourne"],
- ("pelicula","n"): ["napoleón","nightmare before christmas"],
- ("pelicula","o"): ["once","oliver twist"],
 }
 REMOVALS = {
  ("animal","v"): ["volador"],
@@ -482,6 +396,29 @@ for (cat, letter), words in PATCH2.items():
 for (cat, letter), words in REMOVALS.items():
     cur = D[cat].get(letter, [])
     D[cat][letter] = [w for w in cur if norm(w) not in [norm(x) for x in words]]
+
+
+# --- PATCH3 (?v=8, 2026-11-11): palabras que dieron 0/50 en vivo siendo válidas
+# ("calamar" en Animal; "caca"/"caja"/"caza" en Cosa) + refuerzo de celdas flojas.
+PATCH3 = {
+ ("animal","c"): ["calamar","caimán","cotorra","codorniz","cordero","cuco","chivo","chango","chimpancé","chita"],
+ ("animal","p"): ["perra"],
+ ("animal","q"): ["quebrantahuesos"],
+ ("animal","w"): ["weimaraner"],
+ ("animal","x"): ["xolo"],
+ ("cosa","c"): ["caca","caja","caza","canasta","cajón","calcetín","calendario","candela","canoa","capa","cartel","cazuela","cerrojo","chaleco","chicle","chimenea","chamarra","chanclas","cinturón","collar","corbata","corona","crema","cuerda","cuna"],
+ ("cosa","q"): ["quinqué"],
+ ("cosa","u"): ["usb"],
+ ("cosa","w"): ["wáter"],
+ ("fruta","y"): ["yuca"],
+ ("comida","u"): ["uvas pasas"],
+ ("comida","z"): ["zumo"],
+}
+for (cat, letter), words in PATCH3.items():
+    cur = D[cat].setdefault(letter, [])
+    for w in words:
+        if norm(w) not in [norm(x) for x in cur]:
+            cur.append(w)
 
 out = {"categories": D, "bonus": BONUS}
 path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")

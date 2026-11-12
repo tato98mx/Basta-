@@ -47,6 +47,7 @@ var DUCKED_MUSIC_LEVEL = 0.05; // música mientras habla la voz
 /* ------------------------------------------------------------------ */
 
 var ws = null;
+var pingTimer = null; // ?v=8 (A5): keepalive cada 15 s mientras haya sala
 var myName = "";
 var myId = null;
 var roomCode = "";
@@ -71,6 +72,11 @@ var spokenRoundKey = "";
 var spokenCountdownKey = "";
 var spokenRoundEndKey = "";
 var spokenGameOverKey = "";
+var spokenBonusKey = "";
+var freezeWarnedKey = "";
+var bonusWarnedKey = ""; // ?v=8 (A2): aviso de 15 s en la fase bonus, 1 vez
+var bastaSentAt = 0;
+var seenRoundKey = "";
 var writingKey = "";
 var muted = false;
 try { muted = localStorage.getItem(LS_MUTED) === "1"; } catch (e) {}
@@ -629,7 +635,7 @@ function testVoice() {
   }
   refreshVoices(); // re-leer las voces (por si se descargó una nueva)
   var said = false;
-  var text = "El ganador de la ronda es Tato, con 900 puntos. En segundo lugar, Milly, con 600 puntos.";
+  var text = "El ganador de la ronda es Tato, con 700 puntos. En segundo lugar, Milly, con 500 puntos.";
   var u;
   try {
     u = new SpeechSynthesisUtterance(text);
@@ -685,7 +691,7 @@ function testVoice() {
  * versión mayor que APP_VERSION, se muestra un banner con botón de
  * recarga. Así el usuario nunca juega sin saber que hay una versión
  * nueva (esto es lo que pasó con ?v=2 en la sala HFTY). */
-var APP_VERSION = 6;
+var APP_VERSION = 8;
 
 function checkAppVersion() {
   try {
@@ -725,7 +731,7 @@ function showUpdateBanner() {
  * nunca se inventa un nombre ni un punto.
  *
  * Ejemplo: "El ganador de la ronda es Tato, con 750 puntos. En segundo
- * lugar, Milly, con 600 puntos. En tercer lugar, Ledya, con 450 puntos."
+ * lugar, Milly, con 500 puntos. En tercer lugar, Ledya, con 450 puntos."
  */
 function buildRoundEndAnnouncement(state) {
   if (!state || !state.roundWinner) return "";
@@ -752,7 +758,7 @@ function buildRoundEndAnnouncement(state) {
 /**
  * Anuncio del ganador final: nombre + TOTAL acumulado del marcador.
  * Ejemplo: "¡El ganador del juego es Tato, con 1250 puntos! En segundo
- * lugar, Milly, con 900 puntos."
+ * lugar, Milly, con 700 puntos."
  */
 function buildGameOverAnnouncement(state) {
   if (!state || !state.winner) return "";
@@ -949,16 +955,34 @@ function connectWS(code) {
     setConnected(true);
     reconnectAttempts = 0;
     send({ type: "join", name: myName });
+    // ?v=8 (A5): keepalive cada 15 s. El servidor contempla "ping" y al
+    // recibirlo aplica sus temporizadores: si una alarma del Durable
+    // Object fallara, el juego sigue avanzando con los pings de los
+    // jugadores, y las purgas de desconectados se procesan a tiempo.
+    if (pingTimer) clearInterval(pingTimer);
+    pingTimer = setInterval(function () {
+      if (ws === sock && ws.readyState === 1) send({ type: "ping" });
+    }, 15000);
   };
   ws.onmessage = function (ev) {
     if (sock !== ws) return;
     var msg;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (msg.type === "state" && msg.state) onState(msg.state);
-    else if (msg.type === "error" && msg.message) toast("🔔 " + msg.message, "error");
+    else if (msg.type === "error" && msg.message) {
+      toast("🔔 " + msg.message, "error");
+      // ?v=8: si el servidor rechazó una acción (p. ej. el ¡BASTA!),
+      // recalcular los controles para que el jugador pueda reintentarlo.
+      if (currentState && (currentState.phase === "writing" || currentState.phase === "grace")) refreshWritingControls(currentState);
+      if (currentState && currentState.phase === "bonus") {
+        var bb = $("bastaBtn");
+        if (bb) bb.disabled = !draftBonus.trim();
+      }
+    }
   };
   ws.onclose = function () {
     if (sock !== ws) return;
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     setConnected(false);
     if (demoMode) return;
     if (currentState && currentState.phase !== "gameOver") scheduleReconnect();
@@ -1028,6 +1052,16 @@ function showConfigWarning() {
 function onState(state) {
   currentState = state;
   identifyMe(state);
+  // ?v=8: al cambiar de ronda el borrador de la ronda anterior NO sirve.
+  // El servidor limpia myAnswers en beginRound, pero el cliente conservaba
+  // el draft local y la rama 3 del merge de abajo lo resucitaba en los
+  // casilleros (bug en vivo 2026-11-11: la ronda 2 mostraba las palabras
+  // de la ronda 1 y confundía a los dos jugadores).
+  var roundKey = (state.code || "") + "|ronda|" + (state.round || 0);
+  if (seenRoundKey && roundKey !== seenRoundKey) {
+    draft = {}; lastSyncedDraft = {}; draftBonus = ""; lastSyncedBonus = "";
+  }
+  seenRoundKey = roundKey;
   if (state.code) {
     roomCode = state.code;
     var badge = $("roomBadge");
@@ -1038,8 +1072,13 @@ function onState(state) {
   // Mi borrador: el servidor me devuelve lo que llevo escrito.
   // NO sobrescribir a ciegas: el eco del servidor puede llegar desfasado
   // (mi tecleo tarda 300 ms en sincronizarse) y pisaría palabras que ya
-  // escribí en local. Regla: lo que en local difiere de lo último enviado
-  // es un cambio pendiente y gana; lo demás se toma del servidor.
+  // escribí en local. Regla: lo que en local difiere de lo último
+  // CONFIRMADO por el servidor es un cambio pendiente y gana; lo demás se
+  // toma del servidor. ?v=8 (A3): lastSyncedDraft solo se actualiza con
+  // el eco del servidor, NUNCA de forma optimista al enviar (antes se
+  // marcaba como enviado antes de saber si llegó: si el envío se perdía,
+  // el eco viejo del servidor borraba la palabra del draft sin tocar el
+  // input, y el botón ¡BASTA! quedaba muerto con la casilla llena a la vista).
   if (state.myAnswers) {
     var merged = {};
     var cats = state.categories || [];
@@ -1051,8 +1090,29 @@ function onState(state) {
     }
     for (var k in draft) if (!(k in merged)) merged[k] = draft[k];
     draft = merged;
+    // El eco del servidor es la confirmación: lo que el servidor tiene
+    // es lo último que le llegó de verdad.
+    for (var j = 0; j < cats.length; j++) {
+      var cid = cats[j].id;
+      if (state.myAnswers[cid] !== undefined) lastSyncedDraft[cid] = state.myAnswers[cid];
+    }
+    // Si el merge cambió un valor (p. ej. al reconectar), que el input
+    // visible muestre lo mismo que el draft (antes quedaba desfasado).
+    for (var m = 0; m < cats.length; m++) {
+      var inp = $("cat-" + cats[m].id);
+      if (inp && inp.value !== (draft[cats[m].id] || "")) inp.value = draft[cats[m].id] || "";
+    }
   }
-  if (typeof state.myBonus === "string" && draftBonus === lastSyncedBonus) draftBonus = state.myBonus;
+  if (typeof state.myBonus === "string") {
+    if (draftBonus !== lastSyncedBonus) {
+      // Cambio local pendiente: gana el local (mismo arreglo que arriba).
+    } else {
+      draftBonus = state.myBonus;
+    }
+    lastSyncedBonus = state.myBonus; // el eco confirma lo que le llegó
+    var bi = $("bonusInput");
+    if (bi && bi.value !== draftBonus) bi.value = draftBonus;
+  }
   render(state);
 }
 
@@ -1070,20 +1130,25 @@ function maybeAnnounceRoundStart(state) {
   speak("¡La letra es " + state.letter + "!");
 }
 
-/** Cuenta atrás 3-2-1 con voz (y pitido de respaldo). */
+/** Cuenta atrás 3-2-1 con voz (y pitido de respaldo). ?v=8 (A8): los
+ *  números se alinean con el `deadline` del servidor, no con 0/1/2 s
+ *  fijos desde que llegó el estado (quien reconecta a mitad de la cuenta
+ *  escuchaba los números desfasados del número en pantalla). */
 function maybeAnnounceCountdown(state) {
   if (state.phase !== "countdown") return;
   var key = (state.code || "") + "|cuenta|" + state.round;
   if (spokenCountdownKey === key) return;
   spokenCountdownKey = key;
-  var words = ["Tres", "Dos", "Uno"];
-  words.forEach(function (w, i) {
+  var remain = state.deadline ? Math.max(0, state.deadline - Date.now()) : 3000;
+  var plan = [["Tres", remain - 3000], ["Dos", remain - 2000], ["Uno", remain - 1000]];
+  plan.forEach(function (item, i) {
+    if (item[1] < 0) return; // ese número ya pasó (entré tarde a la cuenta)
     setTimeout(function () {
       if (!currentState || currentState.phase !== "countdown") return;
       if (spokenCountdownKey !== key) return;
-      speak(w);
+      speak(item[0]);
       playBeep(i === 2);
-    }, i * 1000);
+    }, item[1]);
   });
 }
 
@@ -1096,6 +1161,22 @@ function maybeAnnounceRoundEnd(state) {
   playApplause();
   var text = buildRoundEndAnnouncement(state);
   if (text) speak(text);
+}
+
+/** Al congelarse la ronda (fase bonus): avisar con voz que se acabó el
+ *  tiempo y que ahora toca UNA palabra bonus. (?v=8: en vivo la pantalla
+ *  bonus sorprendió a los jugadores y el botón ¡BASTA! parecía muerto
+ *  porque la palabra bonus estaba vacía y nadie había avisado del cambio.) */
+function maybeAnnounceBonus(state) {
+  if (state.phase !== "bonus" || !state.bonusCategory) return;
+  var key = (state.code || "") + "|bonus|" + state.round;
+  if (spokenBonusKey === key) return;
+  spokenBonusKey = key;
+  var label = "";
+  (state.bonusCategories || []).forEach(function (c) {
+    if (c.id === state.bonusCategory) label = c.label;
+  });
+  speak("¡Se acabó el tiempo! Ronda congelada. Categoría bonus: " + (label || state.bonusCategory) + ". Escribe una palabra y oprime ¡BASTA!");
 }
 
 /** Al final de la partida: ganador final + fuegos artificiales. */
@@ -1144,9 +1225,28 @@ function startUiLoop() {
           bar.style.width = pct + "%";
           bar.className = "freeze-bar" + (pct >= 85 ? " hot" : "");
         }
+        // ?v=8: aviso UNA vez por ronda a los 30 s de que se va a congelar.
+        var wk = (state.code || "") + "|aviso-congelar|" + state.round;
+        if (remain <= 30000 && remain > 0 && freezeWarnedKey !== wk) {
+          freezeWarnedKey = wk;
+          toast("⏰ ¡Quedan 30 segundos! A los 3:00 la ronda se congela y hay categoría bonus.", "error");
+          speak("¡Quedan 30 segundos para que se congele la ronda!");
+        }
       } else {
         var g = $("graceNum");
         if (g) g.textContent = String(Math.max(0, Math.ceil(remain / 1000)));
+      }
+    }
+    if (state.phase === "bonus" && state.deadline) {
+      var remainB = Math.max(0, state.deadline - now);
+      var bn = $("bonusNum");
+      if (bn) bn.textContent = String(Math.max(0, Math.ceil(remainB / 1000)));
+      // ?v=8 (A2): aviso UNA vez a los 15 s de que el bonus se cierra solo.
+      var bk = (state.code || "") + "|aviso-bonus|" + state.round;
+      if (remainB <= 15000 && remainB > 0 && bonusWarnedKey !== bk) {
+        bonusWarnedKey = bk;
+        toast("⏰ ¡Quedan 15 segundos! Si nadie oprime ¡BASTA!, la ronda se cierra sola.", "error");
+        speak("¡Quedan 15 segundos para la palabra bonus!");
       }
     }
     if (state.phase === "roulette" && state.deadline && !rouletteStopped) {
@@ -1183,9 +1283,15 @@ function renderScoreboard(state) {
     } else if (isBasta) {
       tag = "¡BASTA!";
     }
+    // ?v=8 (A1): un jugador sin conexión no bloquea las puertas; se marca
+    // para que los demás sepan que no está (y que no lo están esperando).
+    if (p.connected === false) {
+      tag = "📴 SIN CONEXIÓN";
+      tagCls = " ready-no";
+    }
     var progHtml = "";
     if (inGame && (state.phase === "writing" || state.phase === "grace")) {
-      progHtml = '<div class="p-progress">' + prog + ' / 9 ✏️</div>';
+      progHtml = '<div class="p-progress">' + prog + ' / ' + ((state.categories || []).length || 7) + ' ✏️</div>';
     } else if (inGame && state.phase === "bonus") {
       progHtml = '<div class="p-progress">' + (prog ? "✅ bonus listo" : "✏️ escribiendo bonus…") + "</div>";
     } else if (state.phase === "ready") {
@@ -1224,7 +1330,9 @@ function allDraftFilled() {
 function scheduleAnswersSync() {
   if (answersTimer) clearTimeout(answersTimer);
   answersTimer = setTimeout(function () {
-    lastSyncedDraft = Object.assign({}, draft);
+    // ?v=8 (A3): NO marcar lastSyncedDraft aquí. El envío por WebSocket
+    // no tiene acuse: si se pierde, el eco viejo del servidor borraría
+    // la palabra del draft. La confirmación llega con el eco (onState).
     send({ type: "answers", answers: draft });
   }, 300);
 }
@@ -1248,7 +1356,7 @@ function refreshWritingControls(state) {
   if (prog) {
     var n = 0;
     for (var j = 0; j < cats.length; j++) if ((draft[cats[j].id] || "").trim()) n++;
-    prog.textContent = n + " / 9 casillas";
+    prog.textContent = n + " / " + cats.length + " casillas";
   }
 }
 
@@ -1284,7 +1392,7 @@ function renderWriting(state) {
   }).join("");
   stage.innerHTML = '<div class="phase-title">✏️ RONDA ' + (state.round || 1) + ' · LETRA ' + esc(state.letter || "?") + '</div>' +
     banner +
-    '<p class="phase-sub">Llena las 9 casillas y oprime <b>¡BASTA!</b> antes que nadie. <span id="myProgress"></span></p>' +
+    '<p class="phase-sub">Llena las ' + (state.categories || []).length + ' casillas y oprime <b>¡BASTA!</b> antes que nadie. <span id="myProgress"></span></p>' +
     '<div class="write-grid">' + rows + '</div>' +
     '<button type="button" class="btn btn-basta" id="bastaBtn">🛑 ¡BASTA!</button>' +
     '<div class="elapsed">⏱️ <b id="elapsedTime">0:00</b> · a los 3:00 la ronda se congela y hay categoría bonus<div class="freeze-track"><div id="freezeBar" class="freeze-bar"></div></div></div>';
@@ -1298,14 +1406,20 @@ function renderWriting(state) {
       refreshWritingControls(state);
       scheduleAnswersSync();
     });
-    input.addEventListener("change", function () { lastSyncedDraft = Object.assign({}, draft); send({ type: "answers", answers: draft }); });
+    input.addEventListener("change", function () { send({ type: "answers", answers: draft }); });
   });
   var btn = $("bastaBtn");
   if (btn) btn.addEventListener("click", function () {
     if (!allDraftFilled()) { toast("Te faltan casillas por llenar.", "error"); return; }
+    // ?v=8: anti doble-tap (1.5 s) SIN auto-bloquear el botón. Antes el
+    // click ponía btn.disabled = true y si el servidor rechazaba el basta
+    // (o se caía la conexión) ningún estado nuevo llegaba a revivirlo: el
+    // jugador se quedaba con el botón muerto en plena ronda.
+    var now = Date.now();
+    if (now - bastaSentAt < 1500) return;
+    bastaSentAt = now;
     send({ type: "basta", answers: draft });
     playBastaFanfare();
-    btn.disabled = true;
   });
   refreshWritingControls(state);
   var first = $("cat-" + (state.categories && state.categories[0] ? state.categories[0].id : ""));
@@ -1456,6 +1570,7 @@ function renderCountdown(state) {
 
 function renderBonus(state) {
   clearWritingFlag();
+  maybeAnnounceBonus(state);
   var stage = $("stage");
   var catLabel = "";
   (state.bonusCategories || []).forEach(function (c) {
@@ -1469,7 +1584,7 @@ function renderBonus(state) {
     '<p>Pasaron 3 minutos escribiendo. Las respuestas principales ya se calificaron y los puntos quedaron congelados.</p></div>' +
     '<div class="phase-title">🎁 CATEGORÍA BONUS</div>' +
     '<div class="big-name">' + esc(catLabel || state.bonusCategory || "") + '</div>' +
-    '<p class="phase-sub">¡Sin letra! Escribe <b>una</b> palabra de esta categoría y oprime <b>¡BASTA!</b>. El primero cierra la ronda.<br>Bonus: 100 pts si es única, 50 si se repite, 0 si no vale.</p>' +
+    '<p class="phase-sub">¡Sin letra! Escribe <b>una</b> palabra de esta categoría y oprime <b>¡BASTA!</b>. El primero cierra la ronda.<br>Bonus: 100 pts si es única, 50 si se repite, 0 si no vale.<br>⏱️ Tienes <b><span id="bonusNum">60</span> s</b>: si nadie oprime ¡BASTA!, la ronda se cierra sola con lo escrito.</p>' +
     '<div class="write-grid"><div class="write-row"><label for="bonusInput">' + esc(catLabel || "Bonus") + '</label>' +
     '<input type="text" id="bonusInput" value="' + esc(draftBonus) + '" placeholder="Tu palabra bonus…" autocomplete="off" maxlength="80"></div></div>' +
     '<button type="button" class="btn btn-basta" id="bastaBtn">🛑 ¡BASTA!</button>' +
@@ -1481,9 +1596,11 @@ function renderBonus(state) {
       var b = $("bastaBtn");
       if (b) b.disabled = !draftBonus.trim();
       if (answersTimer) clearTimeout(answersTimer);
-      answersTimer = setTimeout(function () { lastSyncedBonus = draftBonus; send({ type: "bonus", answer: draftBonus }); }, 300);
+      // ?v=8 (A3): sin marca optimista de lastSyncedBonus (igual que el
+      // borrador principal: la confirmación es el eco del servidor).
+      answersTimer = setTimeout(function () { send({ type: "bonus", answer: draftBonus }); }, 300);
     });
-    input.addEventListener("change", function () { lastSyncedBonus = draftBonus; send({ type: "bonus", answer: draftBonus }); });
+    input.addEventListener("change", function () { send({ type: "bonus", answer: draftBonus }); });
     input.focus();
   }
   var btn = $("bastaBtn");
@@ -1491,9 +1608,13 @@ function renderBonus(state) {
     btn.disabled = !draftBonus.trim();
     btn.addEventListener("click", function () {
       if (!draftBonus.trim()) { toast("Escribe primero la palabra bonus.", "error"); return; }
+      // ?v=8: anti doble-tap (1.5 s) SIN auto-bloquear el botón (ver el
+      // botón principal: si el servidor rechaza el basta, nada lo revivía).
+      var now = Date.now();
+      if (now - bastaSentAt < 1500) return;
+      bastaSentAt = now;
       send({ type: "basta", bonusAnswer: draftBonus });
       playBastaFanfare();
-      btn.disabled = true;
     });
   }
 }
@@ -1510,6 +1631,7 @@ function categoryLabel(state, id) {
  *  Antes no había botón "Salir" en fin de ronda y había que recargar
  *  la página para salir (así le pasó a Milly en la partida CNWN). */
 function leaveRoom() {
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
   if (ws) { try { ws.close(); } catch (e) {} }
   ws = null;
   myId = null; roomCode = ""; currentState = null;
@@ -1554,12 +1676,12 @@ function renderRoundEnd(state) {
       '<div class="result-rows">' + rows + bonusRow + '</div></div>';
   }).join("");
   // Puerta de "Continuar": la siguiente ronda (o el podio final) solo
-  // arranca cuando TODOS los jugadores han tocado Continuar, como la
-  // puerta de "¡Listo a jugar!" al inicio. Sin límite de tiempo.
+  // arranca cuando TODOS los jugadores CONECTADOS han tocado Continuar
+  // (?v=8: un desconectado ya no bloquea la puerta).
   var iContinued = me(state) ? !!me(state).continued : false;
   var isLastRound = state.round >= state.totalRounds;
   var contRows = (state.players || []).map(function (p) {
-    return '<div class="ready-row' + (p.continued ? " is-ready" : "") + '"><span>' + esc(p.name) + (p.id === myId ? " (tú)" : "") + '</span>' +
+    return '<div class="ready-row' + (p.continued ? " is-ready" : "") + '"><span>' + esc(p.name) + (p.id === myId ? " (tú)" : "") + (p.connected === false ? " 📴 sin conexión" : "") + '</span>' +
       '<span class="' + (p.continued ? "st-yes" : "st-no") + '">' + (p.continued ? "✅ Continuar" : "⏳ Esperando…") + '</span></div>';
   }).join("");
   stage.innerHTML = '<div class="phase-title">🏁 FIN DE LA RONDA ' + (state.round || 1) + '</div>' +
@@ -1654,8 +1776,7 @@ function demoStates() {
     { id: "nombre", label: "Nombre" }, { id: "apellido", label: "Apellido" },
     { id: "ciudad", label: "Ciudad o País" }, { id: "animal", label: "Animal" },
     { id: "fruta", label: "Fruta o Verdura" }, { id: "comida", label: "Comida" },
-    { id: "profesion", label: "Profesión o trabajo" }, { id: "cosa", label: "Cosa / Objeto" },
-    { id: "pelicula", label: "Película o Serie" }
+    { id: "cosa", label: "Cosa / Objeto" }
   ];
   var bonusCats = [
     { id: "superheroe", label: "Superhéroe" }, { id: "deporte", label: "Deporte" },
@@ -1677,7 +1798,7 @@ function demoStates() {
   };
   var fullAnswers = {
     nombre: "Rosa", apellido: "Ramírez", ciudad: "Roma", animal: "Rata",
-    fruta: "Rábano", comida: "Ramen", profesion: "Reportero", cosa: "Reloj", pelicula: "Ratatouille"
+    fruta: "Rábano", comida: "Ramen", cosa: "Reloj"
   };
   var demoResults = {
     p1: {
@@ -1688,11 +1809,9 @@ function demoStates() {
         { category: "animal", word: "Rata", canonical: "rata", points: 100, valid: true, reason: "¡Única! 100 pts" },
         { category: "fruta", word: "Rábano", canonical: "rabano", points: 100, valid: true, reason: "¡Única! 100 pts" },
         { category: "comida", word: "Ramen", canonical: "ramen", points: 100, valid: true, reason: "¡Única! 100 pts" },
-        { category: "profesion", word: "Reportero", canonical: "reportero", points: 100, valid: true, reason: "¡Única! 100 pts" },
         { category: "cosa", word: "Reloj", canonical: "reloj", points: 50, valid: true, reason: "Repetida: 50 pts" },
-        { category: "pelicula", word: "Ratatouille", canonical: "ratatouille", points: 100, valid: true, reason: "¡Única! 100 pts" }
       ],
-      bonus: null, frozenPoints: 800, bonusPoints: 0, roundPoints: 800
+      bonus: null, frozenPoints: 700, bonusPoints: 0, roundPoints: 700
     },
     p2: {
       answers: cats.map(function (c) {
@@ -1715,12 +1834,10 @@ function demoStates() {
     { category: "animal", word: "Rana", canonical: "rana", points: 100, valid: true, reason: "¡Única! 100 pts" },
     { category: "fruta", word: "Rúcula", canonical: "rucula", points: 100, valid: true, reason: "¡Única! 100 pts" },
     { category: "comida", word: "Rosca", canonical: "rosca", points: 100, valid: true, reason: "¡Única! 100 pts" },
-    { category: "profesion", word: "Radiólogo", canonical: "radiologo", points: 100, valid: true, reason: "¡Única! 100 pts" },
     { category: "cosa", word: "Reloj", canonical: "reloj", points: 50, valid: true, reason: "Repetida: 50 pts" },
-    { category: "pelicula", word: "Rocky", canonical: "rocky", points: 100, valid: true, reason: "¡Única! 100 pts" }
   ];
-  demoResults.p2.roundPoints = 800;
-  demoResults.p2.frozenPoints = 800;
+  demoResults.p2.roundPoints = 700;
+  demoResults.p2.frozenPoints = 700;
 
   return [
     { label: "🏠 Lobby", state: withPhase(base, { phase: "lobby", players: [{ id: "p1", name: "Tato", score: 0, ready: false }], letter: null, usedLetters: [] }) },
@@ -1729,8 +1846,8 @@ function demoStates() {
     { label: "⏱️ Cuenta 3-2-1", state: withPhase(base, { phase: "countdown", deadline: Date.now() + 3000 }) },
     { label: "✏️ Escribiendo", state: withPhase(base, { phase: "writing", myAnswers: fullAnswers, deadline: Date.now() + 150000 }) },
     { label: "⏰ Gracia 5 s", state: withPhase(base, { phase: "grace", bastaBy: "p2", gracePlayer: "p1", prevRoundWinner: "p1", deadline: Date.now() + 5000, myAnswers: fullAnswers }) },
-    { label: "🧊 Bonus", state: withPhase(base, { phase: "bonus", bonusCategory: "superheroe", frozenPoints: { p1: 800, p2: 800, p3: 0 }, deadline: null }) },
-    { label: "🏁 Fin de ronda", state: withPhase(base, { phase: "roundEnd", bastaBy: "p1", roundWinner: "p1", roundPoints: { p1: 800, p2: 800, p3: 0 }, results: demoResults }) },
+    { label: "🧊 Bonus", state: withPhase(base, { phase: "bonus", bonusCategory: "superheroe", frozenPoints: { p1: 700, p2: 700, p3: 0 }, deadline: null }) },
+    { label: "🏁 Fin de ronda", state: withPhase(base, { phase: "roundEnd", bastaBy: "p1", roundWinner: "p1", roundPoints: { p1: 700, p2: 700, p3: 0 }, results: demoResults }) },
     { label: "🏆 Podio final", state: withPhase(base, { phase: "gameOver", winner: "p1", podium: ["p1", "p2", "p3"] }) }
   ];
 }

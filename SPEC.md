@@ -29,13 +29,13 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
   escritura.
 
 ### Escritura y ¡BASTA!
-- **9 categorías** (en cualquier orden): Nombre, Apellido, Ciudad o País,
-  Animal, Fruta o Verdura, Comida, Profesión o trabajo, Cosa / Objeto,
-  Película o Serie.
-- **Sin límite de tiempo por ronda.** El primero que llene las 9 casillas
+- **7 categorías** (en cualquier orden, ?v=8: Tato pidió quitar Profesión
+  o trabajo y Película o Serie): Nombre, Apellido, Ciudad o País,
+  Animal, Fruta o Verdura, Comida, Cosa / Objeto.
+- **Sin límite de tiempo por ronda.** El primero que llene las 7 casillas
   y oprima **¡BASTA!** cierra la ronda de inmediato y bloquea las
   respuestas de los demás. El botón ¡BASTA! está deshabilitado hasta que
-  las 9 casillas tengan algo escrito (aunque esté mal escrito).
+  las 7 casillas tengan algo escrito (aunque esté mal escrito).
 - **Gracia de 5 segundos:** si quien cantó ¡BASTA! **no** es el ganador
   de la ronda anterior, ese ganador anterior tiene **5 s de gracia** para
   terminar de escribir (fase `grace`); los demás quedan bloqueados de
@@ -57,15 +57,19 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
   (`worker/src/dictionary.json`, importado por `worker/src/game.ts`).
 - Normalización: minúsculas, sin acentos, sin puntuación, espacios
   colapsados. Se aceptan **typos de 1 letra** (distancia de Levenshtein
-  ≤ 1) contra las entradas del diccionario; el typo se resuelve a su
-  palabra canónica, así que dos typos de la misma palabra cuentan como
-  repetida (50 pts), no como dos únicas.
+  ≤ 1) contra las entradas del diccionario, **solo si** el typo cambia la
+  longitud (inserción/borrado) **o** la palabra normalizada tiene ≥ 6
+  letras. Sin esa guarda, palabras cortas distintas colapsaban en una
+  tercera: en ?v=6 "caca" y "caja" (Cosa/C) caían en "cama" y daban 50/50
+  en vez de 100/100. El typo se resuelve a su palabra canónica, así que
+  dos typos de la misma palabra cuentan como repetida (50 pts), no como
+  dos únicas.
 - Si la palabra existe en **otra** categoría con esa misma letra, el motivo
   es "No es un(a) <categoría>" (p. ej. "mango" como animal → "No es un
   animal"). Si no existe en ninguna, "No está en el diccionario del juego".
-- **Cobertura del diccionario:** 2.515 palabras principales + 213 bonus.
-  Por categoría: Nombre 359, Apellido 276, Ciudad 363, Animal 247,
-  Fruta 195, Comida 219, Profesión 255, Cosa 304, Película 294. Cada
+- **Cobertura del diccionario (?v=8):** 2.010 palabras principales + 213 bonus.
+  Por categoría: Nombre 359, Apellido 276, Ciudad 363, Animal 261,
+  Fruta 197, Comida 222, Cosa 332. Cada
   combinación categoría × letra tiene al menos 1 palabra y cada letra
   difícil (K, Q, U, W, X, Y, Z) tiene al menos 2 por categoría. Las
   letras comunes (A, B, C, D, E, F, G, H, I, J, L, M, N, O, P, R, S, T, V)
@@ -289,6 +293,37 @@ jugador y le manda el estado actual **directo a ese socket**.
   + "ibérico" (Comida/I), + "ilama" (Fruta/I, fruta mexicana),
   + "utopía" (Película/U, serie de TV). "Uniforme" ya estaba en
   Cosa/U: su 0 en la sala HFTY no era el diccionario.
+- **?v=8 (2026-11-11, reporte de Tato tras jugar la ronda 2 con Ledya):**
+  (1) el borrador local ya no se resucita al cambiar de ronda: al entrar
+  una ronda nueva el cliente limpia `draft`/`lastSyncedDraft`/`draftBonus`
+  y las casillas arrancan vacías. (2) El botón ¡BASTA! ya no se
+  auto-bloquea al tocarlo: solo hay anti doble-tap de 1.5 s; si el
+  servidor rechaza el basta, el handler de errores recalcula los
+  controles y el botón queda usable. (3) Aviso de voz y toast a los 30 s
+  de que la ronda se va a congelar, y anuncio de voz al congelar con la
+  categoría bonus. (4) 7 categorías: se quitaron Profesión o trabajo y
+  Película o Serie. (5) Diccionario 2.515 → 2.010 (sin esas 2 categorías)
+  + "calamar", "caca", "caja", "caza" y rellenos en celdas flojas; guarda
+  anti-colisión en el fuzzy (ver arriba). Ronda completa = 700 pts.
+- **?v=8 (auditoría independiente, 2026-11-11, sobre ?v=7 en vivo):**
+  (A1) Las puertas "¡Listo!" y "Continuar" solo cuentan jugadores
+  CONECTADOS; al cerrarse un socket el jugador queda marcado
+  `disconnectedAt` y a los 5 min se purga de la sala entre rondas (antes
+  un jugador que cerraba la pestaña bloqueaba la partida para siempre).
+  (A2) La fase bonus tiene 60 s de límite: si nadie oprime ¡BASTA!, la
+  ronda se cierra sola con lo escrito (antes `deadline=null` y la sala
+  quedaba colgada). (A3) `lastSyncedDraft`/`lastSyncedBonus` ya no se
+  marcan de forma optimista al enviar: solo el eco del servidor confirma
+  (antes un envío perdido + eco viejo borraba la palabra del draft sin
+  tocar el input, y el botón ¡BASTA! quedaba muerto con la casilla llena
+  a la vista). (A4) Unirse con un nombre que ya tiene un socket vivo se
+  rechaza (antes robaba el asiento). (A5) El cliente manda `ping` cada
+  15 s (keepalive; el servidor aplica temporizadores al recibirlo).
+  (A6) La revancha exige `playerId` (antes cualquier socket la disparaba).
+  (A7) Colisión de código de sala: `__init__` devuelve 409 y el Worker
+  genera otro código (antes devolvía la sala ajena). (A8) La cuenta atrás
+  por voz se alinea con el `deadline` del servidor (antes 0/1/2 s fijos y
+  quien entraba tarde la escuchaba desfasada).
 - **Watchdog de voz (?v=5, 2026-11-11):** el watchdog de 1.5 s en
   `speakNow` reencolaba el utterance siempre que no llegaba `onstart`,
   aunque el motor estuviera trabajando: con una voz lenta (onstart

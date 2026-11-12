@@ -15,6 +15,8 @@ import { DurableObject } from "cloudflare:workers";
 import {
   addPlayer,
   createGame,
+  markConnected,
+  markDisconnected,
   maybeEnterReady,
   publicState,
   rematch,
@@ -70,17 +72,24 @@ export default {
       } catch {
         // Cuerpo vacío o inválido: se crea la sala con 5 rondas.
       }
-      const code = generateRoomCode();
-      const stub = env.ROOM.get(env.ROOM.idFromName(code));
-      const res = await stub.fetch(
-        new Request("http://room/__init__", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, totalRounds }),
-        }),
-      );
-      if (!res.ok) return json({ error: "No se pudo crear la sala." }, 500);
-      return json({ code });
+      // ?v=8 (A7): el código aleatorio puede colisionar con una sala que ya
+      // existe (1 de ~330 mil, pero pasa). Se reintenta con otro código
+      // hasta 10 veces en vez de devolver la sala ajena.
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const code = generateRoomCode();
+        const stub = env.ROOM.get(env.ROOM.idFromName(code));
+        const res = await stub.fetch(
+          new Request("http://room/__init__", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code, totalRounds }),
+          }),
+        );
+        if (res.status === 409) continue; // código en uso, otro intento
+        if (!res.ok) return json({ error: "No se pudo crear la sala." }, 500);
+        return json({ code });
+      }
+      return json({ error: "No se pudo crear la sala." }, 500);
     }
 
     // Estado actual: GET /api/room/:code
@@ -178,7 +187,9 @@ export class RoomDO extends DurableObject<Env> {
     // Inicializar la sala (la crea el POST /api/room).
     if (request.method === "POST" && url.pathname === "/__init__") {
       const existing = this.load();
-      if (existing) return json({ code: existing.code });
+      // ?v=8 (A7): si el código ya existe, es colisión con otra sala: el
+      // Worker genera otro código en vez de devolver la sala ajena.
+      if (existing) return json({ error: "code_taken" }, 409);
       const body = (await request.json()) as {
         code: string;
         totalRounds?: number;
@@ -276,7 +287,22 @@ export class RoomDO extends DurableObject<Env> {
         // actual DIRECTO a este socket (si no, se queda sin pantalla).
         const existing = state.players.find((p) => p.name === name);
         if (existing) {
+          // ?v=8 (A4): si ese nombre YA tiene otro socket vivo, no se le
+          // roba el asiento (antes un 2º dispositivo con el mismo nombre
+          // controlaba las respuestas del primero). Si no hay socket vivo,
+          // es una reconexión legítima: se reasocia y vuelve a contar.
+          const taken = this.ctx.getWebSockets().some((s) => {
+            if (s === ws) return false;
+            const att = s.deserializeAttachment() as { playerId?: string } | null;
+            return att?.playerId === existing.id;
+          });
+          if (taken) {
+            this.send(ws, { type: "error", message: "Ese nombre ya está jugando en otro dispositivo." });
+            break;
+          }
           ws.serializeAttachment({ playerId: existing.id });
+          markConnected(state, existing.id);
+          changed = true;
           this.send(ws, { type: "state", state: publicState(state, existing.id) });
           break;
         }
@@ -334,6 +360,9 @@ export class RoomDO extends DurableObject<Env> {
         break;
       }
       case "rematch": {
+        // ?v=8 (A6): solo un jugador de la sala puede pedir revancha; un
+        // socket que ni siquiera hizo join no reinicia la partida.
+        if (!playerId) break;
         apply(rematch(state, { now }));
         break;
       }
@@ -354,9 +383,26 @@ export class RoomDO extends DurableObject<Env> {
     }
   }
 
-  webSocketClose(): void {
-    // El jugador puede reconectar con el mismo nombre (join lo reasocia).
-    // El estado de la partida se conserva en SQLite.
+  async webSocketClose(ws: WebSocket): Promise<void> {
+    // ?v=8 (A1): al cerrarse el socket el jugador queda marcado como
+    // desconectado (no borrado): las puertas de "¡Listo!" y "Continuar"
+    // ya no lo esperan, y si reconecta antes de 5 min sigue en la partida.
+    // Si ya hay OTRO socket vivo con ese mismo jugador (reconexión rápida),
+    // no se marca nada: el cierre es del socket viejo.
+    const attachment = ws.deserializeAttachment() as { playerId?: string } | null;
+    const playerId = attachment?.playerId;
+    if (!playerId) return;
+    const stillLive = this.ctx.getWebSockets().some((s) => {
+      if (s === ws) return false;
+      const att = s.deserializeAttachment() as { playerId?: string } | null;
+      return att?.playerId === playerId;
+    });
+    if (stillLive) return;
+    const state = this.load();
+    if (!state) return;
+    markDisconnected(state, playerId, Date.now());
+    this.save(state);
+    this.broadcast(state);
   }
 
   webSocketError(): void {

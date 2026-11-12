@@ -39,12 +39,12 @@ describe("render de fases (demo)", () => {
     }
   });
 
-  it("la pantalla de escritura muestra las 9 categorías y el botón ¡BASTA!", () => {
+  it("la pantalla de escritura muestra las 7 categorías y el botón ¡BASTA!", () => {
     const app = loadApp("?demo=1");
     const writing = app.__BASTA__.demoStates().find((d) => d.label.includes("Escribiendo"));
     app.__BASTA__.renderState(writing.state);
     const html = stageHtml(app);
-    for (const label of ["Nombre", "Apellido", "Ciudad", "Animal", "Fruta", "Comida", "Profesión", "Cosa", "Película"]) {
+    for (const label of ["Nombre", "Apellido", "Ciudad", "Animal", "Fruta", "Comida", "Cosa"]) {
       assert.ok(html.includes(label), `falta la categoría ${label}`);
     }
     assert.ok(html.includes("¡BASTA!"));
@@ -81,25 +81,25 @@ describe("borrador local vs eco del servidor (carrera de sincronización)", () =
     fresh.myAnswers = {}; // el servidor aún no recibió nada mío
     app.__BASTA__.renderState(fresh);
     typeWord(app, "nombre", "natalia");
-    assert.equal(app.__els__.myProgress.textContent, "1 / 9 casillas", "tras escribir 1 palabra el contador debe decir 1/9");
+    assert.equal(app.__els__.myProgress.textContent, "1 / 7 casillas", "tras escribir 1 palabra el contador debe decir 1/7");
     // Llega un estado del servidor con myAnswers todavía vacío (eco viejo).
     const stale = JSON.parse(JSON.stringify(fresh));
     stale.myAnswers = {};
     app.__BASTA__.renderState(stale);
-    assert.equal(app.__els__.myProgress.textContent, "1 / 9 casillas", "el eco desfasado no debe borrar mi palabra");
+    assert.equal(app.__els__.myProgress.textContent, "1 / 7 casillas", "el eco desfasado no debe borrar mi palabra");
     const btn = app.__els__.bastaBtn;
     assert.ok(btn, "debe existir el botón ¡BASTA!");
     // 1/9: el botón sigue deshabilitado (no se puede cantar Basta aún).
     assert.equal(btn.disabled, true);
   });
 
-  it("al escribir las 9 palabras el contador llega a 9/9 aunque lleguen ecos viejos", () => {
+  it("al escribir las 7 palabras el contador llega a 7/7 aunque lleguen ecos viejos", () => {
     const app = loadApp("?demo=1");
     const writing = app.__BASTA__.demoStates().find((d) => d.label.includes("Escribiendo"));
     const fresh = JSON.parse(JSON.stringify(writing.state));
     fresh.myAnswers = {};
     app.__BASTA__.renderState(fresh);
-    const words = { nombre: "natalia", apellido: "navarro", ciudad: "noruega", animal: "nutria", fruta: "naranja", comida: "nachos", profesion: "notario", cosa: "nevera", pelicula: "narnia" };
+    const words = { nombre: "natalia", apellido: "navarro", ciudad: "noruega", animal: "nutria", fruta: "naranja", comida: "nachos", cosa: "nevera" };
     for (const [cat, word] of Object.entries(words)) {
       typeWord(app, cat, word);
       // Eco viejo del servidor entre palabra y palabra (como en partida real
@@ -108,8 +108,8 @@ describe("borrador local vs eco del servidor (carrera de sincronización)", () =
       stale.myAnswers = {};
       app.__BASTA__.renderState(stale);
     }
-    assert.equal(app.__els__.myProgress.textContent, "9 / 9 casillas", "con las 9 palabras el contador debe decir 9/9");
-    assert.equal(app.__els__.bastaBtn.disabled, false, "con 9/9 el botón ¡BASTA! debe habilitarse");
+    assert.equal(app.__els__.myProgress.textContent, "7 / 7 casillas", "con las 7 palabras el contador debe decir 7/7");
+    assert.equal(app.__els__.bastaBtn.disabled, false, "con 7/7 el botón ¡BASTA! debe habilitarse");
   });
 
   it("cuando el servidor ya tiene mi palabra, el eco la conserva", () => {
@@ -123,31 +123,31 @@ describe("borrador local vs eco del servidor (carrera de sincronización)", () =
     const echoed = JSON.parse(JSON.stringify(fresh));
     echoed.myAnswers = { nombre: "natalia" };
     app.__BASTA__.renderState(echoed);
-    assert.equal(app.__els__.myProgress.textContent, "1 / 9 casillas");
+    assert.equal(app.__els__.myProgress.textContent, "1 / 7 casillas");
   });
 });
 
-describe("aviso de versión nueva (anti-caché ?v=6)", () => {
+describe("aviso de versión nueva (anti-caché ?v=8)", () => {
   const fetchVersion = (v) => () => Promise.resolve({ json: () => Promise.resolve({ version: v }) });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   it("si el servidor reporta una versión mayor, aparece el banner de actualización", async () => {
-    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(7) });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(9) });
     // El stub El arranca con hidden=false; simular el atributo hidden del HTML
     // antes de que se resuelva la promesa de checkAppVersion().
     const banner = app.__doc__.getElementById("updateBanner");
     banner.hidden = true;
     await sleep(100);
-    assert.equal(banner.hidden, false, "con versión 7 en el servidor debe aparecer el banner");
-    assert.ok(app.__BASTA__.appVersion === 6, "la app cargada es la v6");
+    assert.equal(banner.hidden, false, "con versión 9 en el servidor debe aparecer el banner");
+    assert.ok(app.__BASTA__.appVersion === 8, "la app cargada es la v8");
   });
 
   it("si el servidor reporta la misma versión, no aparece el banner", async () => {
-    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(6) });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(8) });
     const banner = app.__doc__.getElementById("updateBanner");
     banner.hidden = true;
     await sleep(100);
-    assert.equal(banner.hidden, true, "con versión 6 no debe aparecer el banner");
+    assert.equal(banner.hidden, true, "con versión 8 no debe aparecer el banner");
   });
 });
 
