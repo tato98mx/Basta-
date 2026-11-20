@@ -127,27 +127,27 @@ describe("borrador local vs eco del servidor (carrera de sincronización)", () =
   });
 });
 
-describe("aviso de versión nueva (anti-caché ?v=8)", () => {
+describe("aviso de versión nueva (anti-caché ?v=9)", () => {
   const fetchVersion = (v) => () => Promise.resolve({ json: () => Promise.resolve({ version: v }) });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   it("si el servidor reporta una versión mayor, aparece el banner de actualización", async () => {
-    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(9) });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(10) });
     // El stub El arranca con hidden=false; simular el atributo hidden del HTML
     // antes de que se resuelva la promesa de checkAppVersion().
     const banner = app.__doc__.getElementById("updateBanner");
     banner.hidden = true;
     await sleep(100);
-    assert.equal(banner.hidden, false, "con versión 9 en el servidor debe aparecer el banner");
-    assert.ok(app.__BASTA__.appVersion === 8, "la app cargada es la v8");
+    assert.equal(banner.hidden, false, "con versión 10 en el servidor debe aparecer el banner");
+    assert.ok(app.__BASTA__.appVersion === 9, "la app cargada es la v9");
   });
 
   it("si el servidor reporta la misma versión, no aparece el banner", async () => {
-    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(8) });
+    const app = loadApp("", { apiUrl: "https://basta.ydfz296yrr.workers.dev", fetch: fetchVersion(9) });
     const banner = app.__doc__.getElementById("updateBanner");
     banner.hidden = true;
     await sleep(100);
-    assert.equal(banner.hidden, true, "con versión 8 no debe aparecer el banner");
+    assert.equal(banner.hidden, true, "con versión 9 no debe aparecer el banner");
   });
 });
 
@@ -177,11 +177,17 @@ describe("puerta de Continuar entre rondas (cliente)", () => {
 });
 
 describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => {
+  // ?v=9 (esquema de la versión de Muse, SPEC.md §6): ganador de la ronda
+  // con sus puntos DE LA RONDA + podio de la ronda (1º–3º por puntos de
+  // ronda) + top 3 del marcador general (por TOTAL acumulado). El ganador
+  // se deriva de roundPoints, como roundSpeech de Muse de results.roundScores.
+
   it("formato exacto del ejemplo con 3 jugadores", () => {
     const app = loadApp();
     const state = {
       code: "TEST",
       phase: "roundEnd",
+      round: 1,
       roundWinner: "p1",
       roundPoints: { p1: 750, p2: 600, p3: 450 },
       players: [
@@ -193,17 +199,19 @@ describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => 
     const text = app.__BASTA__.buildRoundEndAnnouncement(state);
     assert.equal(
       text,
-      "El ganador de la ronda es Tato, con 750 puntos. En segundo lugar, Milly, con 600 puntos. En tercer lugar, Ledya, con 450 puntos.",
+      "¡Tato ganó la ronda 1 con 750 puntos! El podio de la ronda: Primer lugar: Tato, con 750 puntos. Segundo lugar: Milly, con 600 puntos. Tercer lugar: Ledya, con 450 puntos. En el marcador general: Primer lugar: Tato, con 1000 puntos. Segundo lugar: Milly, con 600 puntos. Tercer lugar: Ledya, con 450 puntos.",
     );
   });
 
-  it("el ganador usa puntos DE LA RONDA; 2º y 3º usan el TOTAL acumulado", () => {
+  it("el podio de la ronda usa puntos DE LA RONDA y el general el TOTAL acumulado", () => {
     const app = loadApp();
-    // Tato ganó la ronda con 300, pero Milly lleva más total acumulado.
+    // Milly ganó la ronda con 800, pero Tato lleva más total acumulado
+    // que Ledya: los dos podios ordenan distinto.
     const state = {
       code: "TEST",
       phase: "roundEnd",
-      roundWinner: "p1",
+      round: 1,
+      roundWinner: "p2",
       roundPoints: { p1: 300, p2: 800, p3: 100 },
       players: [
         { id: "p1", name: "Tato", score: 500 },
@@ -214,15 +222,16 @@ describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => 
     const text = app.__BASTA__.buildRoundEndAnnouncement(state);
     assert.equal(
       text,
-      "El ganador de la ronda es Tato, con 300 puntos. En segundo lugar, Milly, con 1500 puntos. En tercer lugar, Ledya, con 700 puntos.",
+      "¡Milly ganó la ronda 1 con 800 puntos! El podio de la ronda: Primer lugar: Milly, con 800 puntos. Segundo lugar: Tato, con 300 puntos. Tercer lugar: Ledya, con 100 puntos. En el marcador general: Primer lugar: Milly, con 1500 puntos. Segundo lugar: Ledya, con 700 puntos. Tercer lugar: Tato, con 500 puntos.",
     );
   });
 
-  it("con 2 jugadores solo se anuncian 2 (nada de tercer lugar)", () => {
+  it("con 2 jugadores solo se anuncian 2 en cada podio (nada de tercer lugar)", () => {
     const app = loadApp();
     const state = {
       code: "TEST",
       phase: "roundEnd",
+      round: 1,
       roundWinner: "p1",
       roundPoints: { p1: 500, p2: 400 },
       players: [
@@ -233,17 +242,20 @@ describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => 
     const text = app.__BASTA__.buildRoundEndAnnouncement(state);
     assert.equal(
       text,
-      "El ganador de la ronda es Tato, con 500 puntos. En segundo lugar, Ledya, con 700 puntos.",
+      "¡Tato ganó la ronda 1 con 500 puntos! El podio de la ronda: Primer lugar: Tato, con 500 puntos. Segundo lugar: Ledya, con 400 puntos. En el marcador general: Primer lugar: Tato, con 900 puntos. Segundo lugar: Ledya, con 700 puntos.",
     );
     assert.ok(!text.includes("tercer"), "con 2 jugadores no debe haber tercer lugar");
   });
 
-  it("el ganador de la ronda no se repite como segundo lugar", () => {
+  it("en cada podio cada jugador aparece una sola vez", () => {
     const app = loadApp();
-    // Tato ganó la ronda Y lleva el mayor total: el 2º debe ser otro.
+    // Tato ganó la ronda Y lleva el mayor total: en cada podio es 1º
+    // una sola vez (en ?v=9 el nombre se repite ENTRE secciones, pero
+    // nunca dentro del mismo podio).
     const state = {
       code: "TEST",
       phase: "roundEnd",
+      round: 1,
       roundWinner: "p1",
       roundPoints: { p1: 800, p2: 700, p3: 100 },
       players: [
@@ -253,13 +265,38 @@ describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => 
       ],
     };
     const text = app.__BASTA__.buildRoundEndAnnouncement(state);
-    assert.ok(text.startsWith("El ganador de la ronda es Tato, con 800 puntos."));
-    assert.ok(text.includes("En segundo lugar, Milly, con 900 puntos."));
-    assert.ok(text.includes("En tercer lugar, Ledya, con 800 puntos."));
-    assert.equal((text.match(/Tato/g) || []).length, 1, "Tato debe aparecer una sola vez");
+    assert.ok(text.startsWith("¡Tato ganó la ronda 1 con 800 puntos!"));
+    const roundPodium = text.split("El podio de la ronda: ")[1].split(" En el marcador general: ")[0];
+    assert.equal((roundPodium.match(/Tato/g) || []).length, 1, "Tato debe aparecer una sola vez en el podio de la ronda");
+    assert.ok(roundPodium.includes("Segundo lugar: Milly, con 700 puntos."));
+    assert.ok(roundPodium.includes("Tercer lugar: Ledya, con 100 puntos."));
+    const general = text.split("En el marcador general: ")[1];
+    assert.equal((general.match(/Tato/g) || []).length, 1, "Tato debe aparecer una sola vez en el marcador general");
+    assert.ok(general.includes("Primer lugar: Tato, con 2000 puntos."));
+    assert.ok(general.includes("Segundo lugar: Milly, con 900 puntos."));
+    assert.ok(general.includes("Tercer lugar: Ledya, con 800 puntos."));
   });
 
-  it("sin ganador de ronda no hay anuncio", () => {
+  it("si nadie sumó puntos en la ronda se dice y se sigue con el marcador general", () => {
+    const app = loadApp();
+    const state = {
+      code: "TEST",
+      phase: "roundEnd",
+      round: 1,
+      roundWinner: "p1",
+      roundPoints: { p1: 0, p2: 0 },
+      players: [
+        { id: "p1", name: "Tato", score: 0 },
+        { id: "p2", name: "Ledya", score: 0 },
+      ],
+    };
+    assert.equal(
+      app.__BASTA__.buildRoundEndAnnouncement(state),
+      "Resultados de la ronda 1: nadie sumó puntos esta ronda. En el marcador general: Primer lugar: Tato, con 0 puntos. Segundo lugar: Ledya, con 0 puntos.",
+    );
+  });
+
+  it("sin jugadores no hay anuncio", () => {
     const app = loadApp();
     assert.equal(
       app.__BASTA__.buildRoundEndAnnouncement({ roundWinner: null, players: [] }),
@@ -272,6 +309,7 @@ describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => 
     const state = {
       code: "TEST",
       phase: "roundEnd",
+      round: 1,
       roundWinner: "p1",
       roundPoints: { p1: 1, p2: 0 },
       players: [
@@ -281,13 +319,16 @@ describe("texto del anuncio de fin de ronda (buildRoundEndAnnouncement)", () => 
     };
     assert.equal(
       app.__BASTA__.buildRoundEndAnnouncement(state),
-      "El ganador de la ronda es Tato, con 1 punto. En segundo lugar, Ledya, con 0 puntos.",
+      "¡Tato ganó la ronda 1 con 1 punto! El podio de la ronda: Primer lugar: Tato, con 1 punto. Segundo lugar: Ledya, con 0 puntos. En el marcador general: Primer lugar: Tato, con 1 punto. Segundo lugar: Ledya, con 0 puntos.",
     );
   });
 });
 
 describe("texto del anuncio del ganador final (buildGameOverAnnouncement)", () => {
-  it("anuncia al ganador con su total y al segundo lugar", () => {
+  // ?v=9 (esquema de la versión de Muse, SPEC.md §6): gran ganador con
+  // su TOTAL acumulado + podio final completo (1º–3º por total) +
+  // "¡Felicidades, <nombre>!".
+  it("anuncia al gran ganador con su total, el podio final completo y la felicitación", () => {
     const app = loadApp();
     const state = {
       code: "TEST",
@@ -301,7 +342,7 @@ describe("texto del anuncio del ganador final (buildGameOverAnnouncement)", () =
     };
     assert.equal(
       app.__BASTA__.buildGameOverAnnouncement(state),
-      "¡El ganador del juego es Tato, con 1250 puntos! En segundo lugar, Milly, con 900 puntos.",
+      "¡Fin del juego! ¡El gran ganador es Tato, con 1250 puntos! El podio final: Primer lugar: Tato, con 1250 puntos. Segundo lugar: Milly, con 900 puntos. Tercer lugar: Ledya, con 400 puntos. ¡Felicidades, Tato!",
     );
   });
 

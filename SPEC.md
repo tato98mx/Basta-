@@ -1,7 +1,7 @@
 # ¡Basta! — Especificación del juego (2–6 jugadores en línea)
 
-Repo: `tato98mx/basta` (público, pendiente de crear). Frontend en GitHub Pages
-(`https://tato98mx.github.io/basta/`). Backend: Cloudflare Worker
+Repo: `tato98mx/Basta-` (público, ya creado). Frontend en GitHub Pages
+(`https://tato98mx.github.io/Basta-/`). Backend: Cloudflare Worker
 + Durable Object (plan gratuito) en `worker/`. Todo gratis.
 
 ## 1. Reglas del juego
@@ -18,6 +18,12 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
   presentes opriman **"✅ ¡Listo a jugar!"**. La pantalla muestra quién
   está listo y quién espera. Pueden seguir entrando jugadores (hasta 6)
   durante `lobby` y `ready`; quien entra tarde también debe ponerse listo.
+- **Anfitrión (?v=9, port de la versión de Muse):** el primer jugador que
+  entra es el anfitrión (👑). Si sale de la sala (botón "Salir" o purga
+  por desconexión), el rol pasa al jugador más antiguo que quede. Solo
+  el anfitrión puede pedir la **revancha**; el arranque NO es del
+  anfitrión: sigue siendo automático cuando todos los conectados están
+  listos.
 - Gana la partida quien tenga **más puntos al terminar la última ronda**.
   Empate en el total: gana el primer jugador en orden de entrada.
 
@@ -102,9 +108,18 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
   espera sin límite de tiempo. Empate en puntos de ronda: gana quien
   cantó ¡BASTA!.
 - Al terminar la última ronda: **podio** (1º, 2º y 3º con medallas 🥇🥈🥉,
-  y el resto en lista) con botón de **revancha**. La revancha **NO pasa
-  por "ready"**: arranca directo en la ruleta de la ronda 1, con el
-  marcador en cero y las letras reseteadas.
+  y el resto en lista) con botón de **revancha** (solo la ve el
+  anfitrión; los demás ven "Esperando a que … pida la revancha…"). La
+  revancha **NO pasa por "ready"**: arranca directo en la ruleta de la
+  ronda 1, con el marcador en cero y las letras reseteadas.
+- **Guardia de doble calificación (?v=9, port de `judgeOnce` de la
+  versión de Muse):** una ronda no se puede puntuar dos veces. El
+  servidor anota la ronda puntuada (`scoredRound`) al cerrarla;
+  `scoreRound`/`scoreBonusRound` no hacen nada si esa ronda ya está
+  anotada. Cubre un ¡BASTA! que llegue junto al tick de fin de gracia
+  o de fin de bonus. En el Durable Object los eventos se procesan en
+  serie, así que la guardia es defensa en profundidad + invariante
+  testeable, no un candado concurrente.
 
 ## 2. Arquitectura y protocolo
 
@@ -138,6 +153,11 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
 - `{type:"next"}` — alias de compatibilidad para clientes ?v=2: se trata
   como `"continue"` (marca al jugador, no avanza solo).
 - `{type:"rematch"}` — nueva partida en la misma sala (sin ready).
+  Solo el anfitrión (el servidor lo comprueba con el `playerId` del
+  socket; sin anfitrión en la sala no se comprueba).
+- `{type:"leave"}` — salir de la sala (?v=9): el servidor borra al
+  jugador de inmediato y traspasa el rol de anfitrión si era el que se
+  va (antes solo se cerraba el socket y se purgaba a los 5 min).
 - `{type:"ping"}` — sin efecto; fuerza al servidor a aplicar temporizadores.
 
 ### Mensajes servidor → cliente
@@ -151,7 +171,8 @@ adaptado a 2–6 jugadores por teléfono, en tiempo real.
 {
   "code": "ABCD",
   "phase": "lobby|ready|roulette|countdown|writing|grace|bonus|roundEnd|gameOver",
-  "players": [{"id": "p1", "name": "Tato", "score": 0, "ready": true, "continued": false}],
+  "players": [{"id": "p1", "name": "Tato", "score": 0, "ready": true, "continued": false, "connected": true, "isHost": true}],
+  "hostId": "p1",
   "totalRounds": 5, "round": 1, "letter": "R", "usedLetters": ["R"],
   "categories": [{"id": "nombre", "label": "Nombre"}],
   "bonusCategory": "superheroe",
@@ -194,7 +215,7 @@ jugador y le manda el estado actual **directo a ese socket**.
   **¡BASTA!** rojo enorme con brillo pulsante.
 - Nombre del que cantó ¡BASTA! y del ganador de la ronda **EN GRANDE**;
   podio final con medallas y fuegos artificiales (canvas) + confeti.
-- Marcador en vivo siempre visible (puntos y progreso x/9 de cada jugador).
+- Marcador en vivo siempre visible (puntos y progreso x/7 de cada jugador).
 - Móvil primero: botones grandes, formulario que cabe en el teléfono en
   vertical. Fuentes: Google Fonts (Archivo Black / Montserrat) con
   respaldo a fuentes del sistema si no hay conexión.
@@ -240,7 +261,7 @@ jugador y le manda el estado actual **directo a ese socket**.
   para no descartar el utterance nuevo en Safari antiguo). Watchdog de
   1.5 s sin `onstart`: se limpia la cola atorada y se reencola (hasta
   2 reintentos).
-- **Anti-caché:** los assets llevan `?v=6` y la app pide
+- **Anti-caché:** los assets llevan `?v=9` y la app pide
   `version.json` con anti-caché al arrancar (y al volver a la pestaña);
   si el servidor reporta una versión mayor que `APP_VERSION`, aparece
   un banner "Hay una versión nueva — Actualizar ahora" que recarga la
@@ -281,6 +302,39 @@ jugador y le manda el estado actual **directo a ese socket**.
   voz elegida). Referencias globales al utterance activo.
   Los audios TTS pregrabados por Web Audio quedan como fase 2, no
   en ?v=6.
+- **?v=9 (2026-11-20, port de la versión de Muse a la arquitectura del
+  repo):** (1) anfitrión: el primer jugador es 👑 anfitrión; al salir
+  (mensaje `leave`) o al purgarse por desconexión, el rol pasa al
+  jugador más antiguo; solo el anfitrión pide la revancha (el arranque
+  sigue automático con todos listos). (2) Guardia de doble calificación:
+  `scoredRound` impide puntuar dos veces la misma ronda. (3) Anuncios
+  de voz con el esquema de Muse: fin de ronda = ganador (puntos de la
+  ronda) + podio de la ronda (1º–3º por puntos de ronda) + top 3 del
+  marcador general; final = gran ganador + podio final completo +
+  "¡Felicidades, <nombre>!" (ver §6). (4) Sin mp3: la versión de Muse
+  usaba 28 clips pregrabados (`client/src/assets/audio/*.mp3`); el push
+  a GitHub rechaza binarios, así que la v9 sigue con `speechSynthesis`
+  (voz Paulina, es-MX) + Web Audio, que ya cubrían letra, cuenta,
+  ¡BASTA!, aplausos y fuegos artificiales. (5) Sin juez AI: la versión
+  de Muse juzgaba con `ctx.inference` lo que no estaba en el
+  diccionario; el Worker no tiene ese juez, así que la v9 mantiene
+  diccionario primero + juez difuso por Levenshtein (ver §1) y las 7
+  categorías con diccionario (Profesión o trabajo y Película o Serie
+  siguen fuera, por orden de Tato en ?v=8 y porque no tienen entradas
+  de diccionario). El diccionario NO cambió en v9: el de Muse es el
+  mismo conjunto de palabras (2.010 + 213), solo sin acentos.
+- **Nota: los 28 mp3 de la versión de Muse (2026-11-20):** los clips
+  (`client/src/assets/audio/`, 476 KB: 26 letras + basta + cuenta) se
+  generaron con `/opt/hatch/bin/tts speak --language es`, voz
+  `avocado_v2:MAI_03`, patrón de texto `¡La letra es la {nombre}!`
+  (p. ej. "¡La letra es la eme!"), más "¡Basta!" y la cuenta atrás.
+  Verificado: regenerar `letra-a` con esa receta produce un clip válido
+  con la misma voz (12,517 bytes vs 18,853 del original); el TTS varía
+  entre corridas, así que la receta reproduce clips equivalentes, no
+  byte a byte. Los originales se conservan en el espacio de Muse. La v9
+  NO los incluye en el repo: toda la voz va por `speechSynthesis`
+  (Paulina) + Web Audio como ya hacía v8, y el push a GitHub rechaza
+  binarios.
 - **Botón "Salir" (?v=6):** en fin de ronda hay "🚪 Salir de la
   sala" (antes había que recargar la página para salir, como le pasó
   a Milly en CNWN). También se usa en el podio final.
@@ -357,7 +411,7 @@ jugador y le manda el estado actual **directo a ese socket**.
 
 ```
 /index.html, /app.js, /style.css, /config.js   (frontend, GitHub Pages)
-/manifest.json, /version.json                  (versión anti-caché ?v=6)
+/manifest.json, /version.json                  (versión anti-caché ?v=9)
 /gen_dict.py                                   (generador del diccionario)
 /worker/wrangler.toml                          (Worker "basta" + RoomDO)
 /worker/package.json, /worker/tsconfig.json
@@ -385,24 +439,34 @@ en `app.js` (expuestas en `window.__BASTA__` para pruebas):
 ### Fin de ronda — `buildRoundEndAnnouncement(state)`
 - El **ganador de la ronda** se anuncia con sus **puntos DE ESA RONDA**
   (`state.roundPoints[state.roundWinner]`).
-- El **2º y 3º lugar** se anuncian con su **TOTAL ACUMULADO del marcador**
-  (`state.players[].score`), ordenados por total y sin repetir al ganador
-  de la ronda.
-- Si hay menos de 3 jugadores, se anuncian solo los que haya.
+- El **podio de la ronda (1º, 2º y 3º)** se anuncia con los **puntos DE
+  ESA RONDA** de cada uno, ordenados por puntos de ronda.
+- El **top 3 del marcador general** se anuncia con el **TOTAL ACUMULADO**
+  (`state.players[].score`), ordenado por total.
+- Si hay menos de 3 jugadores, se anuncian solo los que haya; si nadie
+  sumó puntos en la ronda, se dice y se sigue con el marcador general.
 
 Ejemplo exacto (3 jugadores):
-> "El ganador de la ronda es Tato, con 750 puntos. En segundo lugar,
-> Milly, con 600 puntos. En tercer lugar, Ledya, con 450 puntos."
+> "¡Tato ganó la ronda 1 con 750 puntos! El podio de la ronda: Primer
+> lugar: Tato, con 750 puntos. Segundo lugar: Milly, con 600 puntos.
+> Tercer lugar: Ledya, con 450 puntos. En el marcador general: Primer
+> lugar: Tato, con 1250 puntos. Segundo lugar: Milly, con 900 puntos.
+> Tercer lugar: Ledya, con 800 puntos."
 
-Con 2 jugadores:
-> "El ganador de la ronda es Tato, con 500 puntos. En segundo lugar,
-> Ledya, con 700 puntos."
+Con 2 jugadores (solo se anuncian 2 en cada podio):
+> "¡Tato ganó la ronda 1 con 500 puntos! El podio de la ronda: Primer
+> lugar: Tato, con 500 puntos. Segundo lugar: Ledya, con 300 puntos.
+> En el marcador general: Primer lugar: Ledya, con 700 puntos. Segundo
+> lugar: Tato, con 500 puntos."
 
 ### Fin de la partida — `buildGameOverAnnouncement(state)`
-- El **ganador final** se anuncia con su **total acumulado**
-  (`state.players[].score`) y, si hay, el 2º lugar con su total.
-- Ejemplo: "¡El ganador del juego es Tato, con 1250 puntos! En segundo
-  lugar, Milly, con 900 puntos."
+- El **gran ganador** se anuncia con su **total acumulado**
+  (`state.players[].score`), seguido del **podio final completo**
+  (1º, 2º y 3º por total) y de "¡Felicidades, <nombre>!".
+- Ejemplo: "¡Fin del juego! ¡El gran ganador es Tato, con 1250 puntos!
+  El podio final: Primer lugar: Tato, con 1250 puntos. Segundo lugar:
+  Milly, con 900 puntos. Tercer lugar: Ledya, con 800 puntos.
+  ¡Felicidades, Tato!"
 - Su nombre sale **EN GRANDE** entre **fuegos artificiales visuales**
   (animación en canvas: cohetes que suben y estallan en partículas de
   colores, `launchFireworks()` en `app.js`) y **sonido de fuegos
@@ -412,8 +476,13 @@ Con 2 jugadores:
 ### Verificación
 - `tests-client/smoke.test.cjs`: construye el texto del anuncio a partir
   de estados simulados del servidor y verifica nombres, orden y puntos,
-  incluido el caso de 2 jugadores (solo se anuncian 2) y el caso en que
-  el ganador de la ronda también lleva el mayor total (no se repite).
+  incluido el caso de 2 jugadores (solo se anuncian 2). **?v=9: el
+  esquema del anuncio cambió (podio de la ronda por puntos de ronda +
+  top 3 general; ver arriba) y varias pruebas de este archivo, de
+  `voice.test.cjs`, de `repro-voice-ios.cjs` y de
+  `worker/tests/e2e-local.mjs` todavía afirman el texto ?v=8 ("En
+  segundo lugar, …"): hay que actualizarlas en la fase de pruebas,
+  no en este port.**
   También verifica el botón "➡️ Continuar" en fin de ronda (y "🏆 Ver
   el podio final" en la última), el banner de versión nueva (?v=4) y
   la carrera del borrador: un eco desfasado del servidor no borra el

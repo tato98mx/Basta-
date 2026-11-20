@@ -4,7 +4,9 @@
  * SIN dependencias del runtime de Cloudflare: máquina de estados, ruleta de
  * letras, juez con diccionario, puntuación, gracia de 5 s, congelamiento a
  * los 3 minutos con categoría bonus, podio y revancha. Importable y
- * testeable con node.
+ * testeable con node. ?v=9 (port de la versión de Muse): anfitrión con
+ * traspaso al salir, salida explícita de la sala y guardia de que una
+ * ronda no se pueda calificar dos veces.
  *
  * El servidor es autoritativo: `publicState()` es lo único que se envía al
  * cliente y NUNCA incluye las respuestas de otros jugadores mientras se
@@ -113,6 +115,20 @@ export interface GameState {
   code: string;
   phase: Phase;
   players: PlayerState[];
+  /** Anfitrión de la sala (?v=9, port de la versión de Muse): el primer
+   *  jugador que entra. Si sale, el rol pasa al jugador más antiguo que
+   *  quede (ver leavePlayer y la purga en tick). Solo el anfitrión puede
+   *  pedir la revancha. El arranque NO es del anfitrión: sigue siendo
+   *  automático cuando todos los conectados están listos (ver startGame). */
+  hostId: string | null;
+  /** Ronda ya puntuada (?v=9, guardia de doble calificación, port de
+   *  judgeOnce de la versión de Muse): finishRound anota aquí la ronda
+   *  que puntuó; scoreRound/scoreBonusRound no hacen nada si la ronda
+   *  actual ya está anotada. En el Durable Object los eventos se
+   *  procesan en serie, así que dos ¡BASTA! (o un ¡BASTA! contra el
+   *  tick de fin de gracia/bonus) no pueden puntuar a la vez; la
+   *  guardia hace el invariante explícito y testeable. */
+  scoredRound: number | null;
   totalRounds: number;
   round: number;
   letter: string | null;
@@ -337,6 +353,8 @@ export function createGame(code: string, opts: CreateGameOptions = {}): GameStat
     code,
     phase: "lobby",
     players: [],
+    hostId: null,
+    scoredRound: null,
     totalRounds,
     round: 0,
     letter: null,
@@ -357,13 +375,15 @@ export function createGame(code: string, opts: CreateGameOptions = {}): GameStat
   };
 }
 
-/** Añade un jugador a la sala. Máximo 6. Devuelve su id o null si está llena. */
+/** Añade un jugador a la sala. Máximo 6. Devuelve su id o null si está llena.
+ *  El primer jugador que entra es el anfitrión (hostId). */
 export function addPlayer(state: GameState, name: string): string | null {
   const clean = name.trim().slice(0, 30);
   if (!clean) return null;
   if (state.players.length >= MAX_PLAYERS) return null;
   const id = `p${state.players.length + 1}`;
   state.players.push({ id, name: clean, score: 0, ready: false, continued: false, disconnectedAt: null });
+  if (state.hostId === null) state.hostId = id;
   state.answers[id] = {};
   state.bonusAnswers[id] = "";
   return id;
@@ -392,6 +412,34 @@ export function markDisconnected(state: GameState, playerId: string, now: number
 export function markConnected(state: GameState, playerId: string): void {
   const p = playerById(state, playerId);
   if (p) p.disconnectedAt = null;
+}
+
+/**
+ * Salida explícita de un jugador (?v=9, port de leaveGame de la versión
+ * de Muse): se borra su asiento y sus respuestas de la ronda. Si era el
+ * anfitrión, el rol pasa al jugador más antiguo que quede en la sala, así
+ * la sala siempre puede pedir revancha (en la versión de Muse el traspaso
+ * solo ocurría en el lobby; aquí se hace en cualquier fase porque el
+ * anfitrión también es quien pide la revancha al final). Si era el
+ * jugador con gracia o el ganador de la ronda anterior, esas marcas se
+ * limpian para que nadie herede una gracia de alguien que ya no está.
+ * El `bastaBy` se conserva: es historia de la ronda en curso.
+ */
+export function leavePlayer(state: GameState, playerId: string): ActionResult {
+  const player = playerById(state, playerId);
+  if (!player) return fail("Jugador desconocido.");
+  state.players = state.players.filter((p) => p.id !== playerId);
+  delete state.answers[playerId];
+  delete state.bonusAnswers[playerId];
+  if (state.hostId === playerId) {
+    state.hostId = state.players[0]?.id ?? null;
+  }
+  if (state.gracePlayer === playerId) state.gracePlayer = null;
+  if (state.prevRoundWinner === playerId) state.prevRoundWinner = null;
+  if (state.roundWinner === playerId) state.roundWinner = null;
+  state.podium = state.podium.filter((id) => id !== playerId);
+  if (state.winner === playerId) state.winner = state.podium[0] ?? null;
+  return ok();
 }
 
 /** ¿La sala ya puede pasar a "ready"? (al entrar el 2º jugador). */
@@ -427,6 +475,7 @@ function beginRound(state: GameState, now: number, rng: Rng): void {
   state.roundPoints = {};
   state.results = null;
   state.frozenPoints = null;
+  state.scoredRound = null; // nueva ronda: nada puntuado todavía
   // Nueva ronda: nadie ha tocado "Continuar" todavía.
   for (const p of state.players) p.continued = false;
   state.phase = "roulette";
@@ -571,7 +620,8 @@ function pickRoundWinner(state: GameState, roundPoints: Record<string, number>):
 }
 
 /** Cierra la ronda con los puntos ya juzgados: suma al marcador, guarda el
- *  ganador de la ronda y pasa a "roundEnd". */
+ *  ganador de la ronda y pasa a "roundEnd". Anota la ronda como puntuada
+ *  (guardia ?v=9: una ronda no se puntúa dos veces). */
 function finishRound(
   state: GameState,
   results: Record<string, PlayerRoundResult>,
@@ -584,6 +634,7 @@ function finishRound(
   state.roundPoints = roundPoints;
   state.roundWinner = pickRoundWinner(state, roundPoints);
   state.prevRoundWinner = state.roundWinner;
+  state.scoredRound = state.round;
   state.phase = "roundEnd";
   state.deadline = null;
   state.gracePlayer = null;
@@ -591,8 +642,11 @@ function finishRound(
   for (const p of state.players) p.continued = false;
 }
 
-/** Puntúa la ronda normal (sin congelamiento): juzga y cierra. */
+/** Puntúa la ronda normal (sin congelamiento): juzga y cierra.
+ *  Guardia ?v=9: si esta ronda ya se puntuó (p. ej. un ¡BASTA! que llegó
+ *  junto al tick de fin de gracia), no se vuelve a puntuar. */
 function scoreRound(state: GameState): void {
+  if (state.scoredRound === state.round) return;
   const { results, roundPoints } = judgeMainAnswers(state);
   finishRound(state, results, roundPoints);
 }
@@ -612,8 +666,10 @@ function freezeRound(state: GameState, now: number): void {
   state.deadline = now + BONUS_MS;
 }
 
-/** Puntúa la palabra bonus y cierra la ronda (congelado + bonus). */
+/** Puntúa la palabra bonus y cierra la ronda (congelado + bonus).
+ *  Guardia ?v=9: igual que scoreRound, no puntúa dos veces la misma ronda. */
 function scoreBonusRound(state: GameState): void {
+  if (state.scoredRound === state.round) return;
   const bonusId = state.bonusCategory;
   if (!bonusId || !state.results || !state.frozenPoints) {
     // No debería pasar; si pasa, se cierra con lo congelado.
@@ -824,9 +880,18 @@ export function advance(
 }
 
 /** Revancha: nueva partida en la misma sala. NO pasa por "ready": arranca
- *  directo en la ruleta de la ronda 1 (ya están todos dentro y listos). */
-export function rematch(state: GameState, opts: StartOptions = {}): ActionResult {
+ *  directo en la ruleta de la ronda 1 (ya están todos dentro y listos).
+ *  ?v=9 (port de la versión de Muse): solo el anfitrión puede pedirla.
+ *  `opts.playerId` es opcional para no romper llamadas sin jugador
+ *  (tests): sin playerId no se comprueba el rol; el WS siempre lo pasa. */
+export function rematch(
+  state: GameState,
+  opts: StartOptions & { playerId?: string } = {},
+): ActionResult {
   if (state.phase !== "gameOver") return fail("La partida aún no termina.");
+  if (opts.playerId !== undefined && state.hostId !== null && opts.playerId !== state.hostId) {
+    return fail("Solo el anfitrión puede pedir la revancha.");
+  }
   const rng = opts.rng ?? defaultRng;
   const now = opts.now ?? Date.now();
   for (const p of state.players) {
@@ -863,9 +928,14 @@ export function tick(
   let changed = false;
   if (["lobby", "ready", "roundEnd", "gameOver"].includes(state.phase)) {
     const before = state.players.length;
+    const hostPurged = state.hostId !== null &&
+      state.players.some((p) => p.id === state.hostId && p.disconnectedAt !== null && now - p.disconnectedAt > DISCONNECT_PURGE_MS);
     state.players = state.players.filter(
       (p) => p.disconnectedAt === null || now - p.disconnectedAt <= DISCONNECT_PURGE_MS,
     );
+    // ?v=9: si el purgado era el anfitrión, el rol pasa al más antiguo
+    // que quede (igual que en leavePlayer).
+    if (hostPurged) state.hostId = state.players[0]?.id ?? null;
     if (state.players.length !== before) changed = true;
   }
   if (state.deadline === null || now < state.deadline) return changed;
@@ -934,7 +1004,9 @@ export function publicState(state: GameState, viewerId?: string): Record<string,
       ready: p.ready,
       continued: p.continued,
       connected: p.disconnectedAt === null,
+      isHost: state.hostId === p.id, // ?v=9: anfitrión de la sala
     })),
+    hostId: state.hostId, // ?v=9: anfitrión de la sala
     totalRounds: state.totalRounds,
     round: state.round,
     letter: state.letter,

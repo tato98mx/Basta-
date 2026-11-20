@@ -5,15 +5,16 @@ desde su teléfono, en tiempo real. Lo más parecido posible a un show de
 TV: ruleta de letras, cuenta atrás con voz, botón ¡BASTA! gigante,
 aplausos, marcador en vivo y podio con fuegos artificiales.
 
-- **Juego (cuando esté publicado):** `https://tato98mx.github.io/basta/`
-- **Repositorio:** `https://github.com/tato98mx/basta`
+- **Juego (cuando esté publicado):** `https://tato98mx.github.io/Basta-/`
+- **Repositorio:** `https://github.com/tato98mx/Basta-`
 - **Backend:** Cloudflare Worker `basta` + Durable Object (SQLite),
   plan gratuito.
 
-> ⚠️ **Estado:** el código está terminado y verificado en local, pero el
-> repositorio aún no existe en GitHub (la app de Muse no tiene permiso para
-> crear repositorios) y el Worker aún no está desplegado. Ver
-> [Pasos pendientes](#pasos-pendientes) abajo.
+> ⚠️ **Estado:** v9 (versión de Muse auditada, portada a esta arquitectura)
+> verificada en local. El repositorio existe (`tato98mx/Basta-`) y el juego
+> está en vivo en GitHub Pages (v8); el Worker en vivo sigue en la versión
+> anterior hasta redesplegarlo. Pendiente: los secrets de Cloudflare (ver
+> [Pasos pendientes](#pasos-pendientes) abajo).
 
 ## Cómo se juega
 
@@ -26,14 +27,14 @@ aplausos, marcador en vivo y podio con fuegos artificiales.
    La partida empieza solo cuando **TODOS** están listos.
 4. La ruleta gira y sale la letra. Se anuncian la ronda y la letra con
    voz, suena la cuenta 3-2-1… ¡y a escribir!
-5. Llena las 9 categorías (Nombre, Apellido, Ciudad o País, Animal,
-   Fruta o Verdura, Comida, Profesión o trabajo, Cosa / Objeto, Película
-   o Serie) y oprime **¡BASTA!** antes que nadie.
+5. Llena las 7 categorías (Nombre, Apellido, Ciudad o País, Animal,
+   Fruta o Verdura, Comida, Cosa / Objeto) y oprime **¡BASTA!** antes
+   que nadie.
 6. Al terminar, pueden jugar la **revancha** en la misma sala (arranca
    directo, sin ponerse listos otra vez).
 
 También hay un **modo demo** para ver el aspecto sin servidor:
-`https://tato98mx.github.io/basta/?demo=1` (9 pantallas de ejemplo para
+`https://tato98mx.github.io/Basta-/?demo=1` (9 pantallas de ejemplo para
 recorrer, con anuncios de voz).
 
 ## Reglas implementadas
@@ -41,7 +42,7 @@ recorrer, con anuncios de voz).
 - **2 a 6 jugadores** por sala; rondas a elegir: **3, 5, 7 o 10**.
 - **Ruleta de letra** al inicio de cada ronda (A–Z sin Ñ, sin repetir
   letra en la misma partida) + cuenta atrás 3-2-1.
-- **Sin límite de tiempo** para escribir. El primero con las 9 casillas
+- **Sin límite de tiempo** para escribir. El primero con las 7 casillas
   llenas que oprima **¡BASTA!** cierra la ronda y bloquea a los demás.
 - **Gracia de 5 segundos:** si quien cantó ¡BASTA! no es el ganador de
   la ronda anterior, ese ganador tiene 5 s para terminar de escribir.
@@ -56,9 +57,14 @@ recorrer, con anuncios de voz).
   cierra la ronda; el bonus suma 100/50/0 a lo congelado.
 - **Fin de ronda:** ganador EN GRANDE con sus puntos, tabla completa con
   palabra, puntos y motivo de cada jugador, y anuncio de voz del ganador
-  y del 2º y 3º lugar.
+  con el podio de la ronda (1º, 2º y 3º por puntos de la ronda) y el top
+  3 del marcador general.
 - **Podio final** (🥇🥈🥉) con fuegos artificiales y anuncio de voz del
-  ganador del juego.
+  ganador del juego con el podio final completo.
+- **Anfitrión:** el primer jugador es el anfitrión (👑); si sale de la
+  sala, el rol pasa al jugador más antiguo. Solo el anfitrión pide la
+  revancha. Salir con el botón "🚪 Salir de la sala" libera el asiento
+  de inmediato.
 
 ## Anuncios de voz (español)
 
@@ -66,13 +72,19 @@ Todo emocionante como show, con Web Speech API (`lang: es-MX`) y música
 bajita (2/5) que se baja momentáneamente mientras habla la voz (ducking):
 
 - Al arrancar cada ronda: "¡Ronda 1!" + "¡La letra es R!" + cuenta 3-2-1.
-- Al terminar cada ronda: "El ganador de la ronda es Tato, con 750
-  puntos. En segundo lugar, Milly, con 600 puntos. En tercer lugar,
-  Ledya, con 450 puntos." (El ganador con puntos **de esa ronda**; 2º y
-  3º con su **total acumulado** del marcador. Si hay 2 jugadores, solo se
-  anuncian 2.)
-- Al final: "¡El ganador del juego es Tato, con 1250 puntos!" con su
-  nombre EN GRANDE entre fuegos artificiales visuales y de sonido.
+- Al terminar cada ronda: "¡Tato ganó la ronda 1 con 750 puntos! El
+  podio de la ronda: Primer lugar: Tato, con 750 puntos. Segundo lugar:
+  Milly, con 600 puntos. Tercer lugar: Ledya, con 450 puntos. En el
+  marcador general: Primer lugar: Tato, con 1250 puntos. Segundo lugar:
+  Milly, con 900 puntos. Tercer lugar: Ledya, con 800 puntos." (El
+  podio de la ronda con puntos **de esa ronda**; el marcador general
+  con el **total acumulado**. Si hay 2 jugadores, solo se anuncian 2 en
+  cada podio.)
+- Al final: "¡Fin del juego! ¡El gran ganador es Tato, con 1250 puntos!
+  El podio final: Primer lugar: Tato, con 1250 puntos. Segundo lugar:
+  Milly, con 900 puntos. Tercer lugar: Ledya, con 800 puntos.
+  ¡Felicidades, Tato!" con su nombre EN GRANDE entre fuegos
+  artificiales visuales y de sonido.
 
 El texto se construye en el cliente a partir del estado del servidor
 (`buildRoundEndAnnouncement` y `buildGameOverAnnouncement` en `app.js`).
@@ -102,7 +114,7 @@ worker/
   wrangler.toml             Worker "basta" + Durable Object RoomDO
   src/index.ts              Worker: /api/room, WebSocket, Durable Object
   src/game.ts               Lógica pura del juego (testeable sin Cloudflare)
-  src/dictionary.json       Diccionario del juez (2.512 palabras + 213 bonus)
+  src/dictionary.json       Diccionario del juez (2.010 palabras + 213 bonus)
   tests/logic.test.mjs      Tests de la lógica (node:test)
   tests/e2e-local.mjs       Partida de 2 jugadores contra wrangler dev --local
 tests-client/
@@ -115,30 +127,13 @@ SPEC.md                     Especificación completa (reglas, protocolo, voz)
 
 ## Pasos pendientes
 
-### 1. Crear el repositorio (lo hace Tato)
+### 1. Crear el repositorio — HECHO
 
-La app de Muse en GitHub **no tiene permiso para crear repositorios**, así
-que este paso es manual:
+El repositorio `tato98mx/Basta-` (público) ya existe desde el 11-nov-2026 y ya está añadido a la app de Muse en GitHub.
 
-1. Entra a <https://github.com/new>.
-2. **Repository name:** `basta`.
-3. **Public** (público).
-4. No marques ninguna casilla de README, .gitignore ni licencia (el código
-   ya las trae).
-5. Pulsa **Create repository**.
-6. **Añade el repo a la app de Muse en GitHub** para que Milly pueda subir
-   los archivos: en GitHub, foto de perfil → **Settings** →
-   **Applications** → **Installed GitHub Apps** → **Muse** → **Configure**
-   → **Repository access** → **Only select repositories** → selecciona
-   `basta` → **Save**.
+### 2. Activar GitHub Pages — HECHO
 
-Después de esto, Milly sube todos los archivos del proyecto al repo.
-
-### 2. Activar GitHub Pages (lo hace Tato)
-
-En el repositorio: **Settings → Pages → Build and deployment → Source:
-Deploy from a branch → Branch: `main`, carpeta `/(root)` → Save**.
-El juego quedará en `https://tato98mx.github.io/basta/`.
+GitHub Pages ya está activo (rama `main`, raíz). El juego está en vivo en `https://tato98mx.github.io/Basta-/`.
 
 ### 3. Agregar los secrets de Cloudflare (lo hace Tato)
 
@@ -154,15 +149,9 @@ dos secrets en el repositorio
 Sin esos dos secrets, el workflow `Deploy Worker` falla. No se guardan
 tokens en ningún archivo del repo.
 
-### 4. Conectar el frontend con el Worker (lo hace Milly)
+### 4. Conectar el frontend con el Worker — HECHO
 
-Cuando el Worker esté desplegado, Milly pone su URL en `config.js`:
-
-```js
-window.GAME_API_URL = "https://basta.<tu-subdominio>.workers.dev";
-```
-
-y hace push. A partir de ahí, crear sala y unirse ya funcionan en vivo.
+`config.js` ya tiene la URL real del Worker (`https://basta.ydfz296yrr.workers.dev`); crear sala y unirse ya funcionan en vivo.
 
 ### 5. Probar entre todos
 

@@ -6,16 +6,19 @@
  *
  * Protocolo (SPEC.md §4):
  *   cliente -> servidor: join, ready, answers, bonus, basta, next,
- *     rematch, ping
+ *     rematch, leave, ping
  *   servidor -> cliente: {type:"state", state} | {type:"error", message}
  *
  * ANUNCIOS DE VOZ (español, como show):
  * - Al arrancar cada ronda: "¡Ronda N!" + "¡La letra es X!" + cuenta 3-2-1.
- * - Al terminar cada ronda: ganador de la ronda (puntos DE ESA RONDA) y
- *   2º/3º por TOTAL acumulado del marcador. El texto se construye en el
- *   cliente con buildRoundEndAnnouncement(state) a partir del estado del
- *   servidor; nunca se inventa. (Ver SPEC.md §6 y tests-client.)
- * - Al final de la partida: ganador final EN GRANDE + fuegos artificiales
+ * - Al terminar cada ronda (?v=9, esquema de la versión de Muse):
+ *   ganador de la ronda con sus PUNTOS DE ESA RONDA + podio de la ronda
+ *   (1º, 2º y 3º por puntos de la ronda) + top 3 del marcador general
+ *   (por total acumulado). El texto se construye en el cliente con
+ *   buildRoundEndAnnouncement(state) a partir del estado del servidor;
+ *   nunca se inventa. (Ver SPEC.md §6 y tests-client.)
+ * - Al final de la partida: gran ganador + podio final completo (1º, 2º
+ *   y 3º por total) + "¡Felicidades, <nombre>!" + fuegos artificiales
  *   visuales (canvas) y de sonido (Web Audio).
  * - Voz: Web Speech API, lang es-MX, con fallback a tonos si no hay voz en
  *   español. Música bajita (2/5) y voz/efectos fuertes (5/5): al hablar, la
@@ -635,7 +638,7 @@ function testVoice() {
   }
   refreshVoices(); // re-leer las voces (por si se descargó una nueva)
   var said = false;
-  var text = "El ganador de la ronda es Tato, con 700 puntos. En segundo lugar, Milly, con 500 puntos.";
+  var text = "¡Tato ganó la ronda con 700 puntos! El podio de la ronda: Primer lugar: Tato, con 700 puntos. Segundo lugar: Milly, con 500 puntos.";
   var u;
   try {
     u = new SpeechSynthesisUtterance(text);
@@ -691,7 +694,7 @@ function testVoice() {
  * versión mayor que APP_VERSION, se muestra un banner con botón de
  * recarga. Así el usuario nunca juega sin saber que hay una versión
  * nueva (esto es lo que pasó con ?v=2 en la sala HFTY). */
-var APP_VERSION = 8;
+var APP_VERSION = 9;
 
 function checkAppVersion() {
   try {
@@ -719,61 +722,90 @@ function showUpdateBanner() {
 /* ------------------------------------------------------------------ */
 
 /**
- * Anuncio de fin de ronda.
+ * Anuncio de fin de ronda (?v=9, esquema de la versión de Muse).
  *
  * - El GANADOR DE LA RONDA se anuncia con sus PUNTOS DE ESA RONDA
- *   (state.roundPoints[roundWinner], que manda el servidor).
- * - El 2º y 3º lugar se anuncian con su TOTAL ACUMULADO del marcador
- *   (state.players[].score, que manda el servidor), ordenados por total y
- *   sin repetir al ganador de la ronda.
- * - Si hay menos de 3 jugadores, se anuncian solo los que haya.
+ *   (state.roundPoints[state.roundWinner], que manda el servidor).
+ * - El PODIO DE LA RONDA (1º, 2º y 3º) se anuncia con los puntos DE ESA
+ *   RONDA de cada uno, ordenados por puntos de ronda.
+ * - El TOP 3 DEL MARCADOR GENERAL se anuncia con el TOTAL ACUMULADO
+ *   (state.players[].score), ordenado por total.
+ * - Si hay menos de 3 jugadores, se anuncian solo los que haya; si nadie
+ *   sumó puntos, se dice y se sigue con el marcador general.
  * El texto se construye en el cliente a partir del estado del servidor;
  * nunca se inventa un nombre ni un punto.
  *
- * Ejemplo: "El ganador de la ronda es Tato, con 750 puntos. En segundo
- * lugar, Milly, con 500 puntos. En tercer lugar, Ledya, con 450 puntos."
+ * Ejemplo: "¡Tato ganó la ronda 1 con 750 puntos! El podio de la ronda:
+ * Primer lugar: Tato, con 750 puntos. Segundo lugar: Milly, con 600
+ * puntos. Tercer lugar: Ledya, con 450 puntos. En el marcador general:
+ * Primer lugar: Tato, con 1250 puntos. Segundo lugar: Milly, con 900
+ * puntos. Tercer lugar: Ledya, con 800 puntos."
  */
+var PLACE_LABELS = ["Primer lugar", "Segundo lugar", "Tercer lugar"];
+
+function placesSpeech(entries) {
+  var out = [];
+  for (var i = 0; i < Math.min(3, entries.length); i++) {
+    out.push(PLACE_LABELS[i] + ": " + entries[i].name + ", con " + ptsWord(entries[i].score) + ".");
+  }
+  return out.join(" ");
+}
+
 function buildRoundEndAnnouncement(state) {
-  if (!state || !state.roundWinner) return "";
-  var players = state.players || [];
-  var winner = playerById(state, state.roundWinner);
-  if (!winner) return "";
-  var roundPts = 0;
-  if (state.roundPoints && typeof state.roundPoints[state.roundWinner] === "number") {
-    roundPts = state.roundPoints[state.roundWinner];
+  if (!state || !state.players || !state.players.length) return "";
+  var players = state.players;
+  var byRound = players.map(function (p) {
+    return {
+      id: p.id,
+      name: p.name,
+      roundScore: (state.roundPoints && typeof state.roundPoints[p.id] === "number") ? state.roundPoints[p.id] : 0,
+      total: p.score || 0
+    };
+  });
+  byRound.sort(function (a, b) { return b.roundScore - a.roundScore; });
+  var best = byRound[0].roundScore;
+  var text;
+  if (best > 0) {
+    // SPEC §1/§6: el ganador de la ronda es state.roundWinner, que manda
+    // el servidor con el desempate ¡BASTA! aplicado. En empate de puntos
+    // de ronda, el primero por orden de entrada NO es necesariamente el
+    // ganador: hay que usar roundWinner, no byRound[0].
+    var winnerEntry = null;
+    if (state.roundWinner) {
+      for (var i = 0; i < byRound.length; i++) {
+        if (byRound[i].id === state.roundWinner) { winnerEntry = byRound[i]; break; }
+      }
+    }
+    if (!winnerEntry || winnerEntry.roundScore <= 0) winnerEntry = byRound[0];
+    text = "¡" + winnerEntry.name + " ganó la ronda " + (state.round || 1) + " con " + ptsWord(winnerEntry.roundScore) + "! " +
+      "El podio de la ronda: " + placesSpeech(byRound.map(function (s) { return { name: s.name, score: s.roundScore }; }));
+  } else {
+    text = "Resultados de la ronda " + (state.round || 1) + ": nadie sumó puntos esta ronda.";
   }
-  var parts = ["El ganador de la ronda es " + winner.name + ", con " + ptsWord(roundPts) + "."];
-  var rest = [];
-  for (var i = 0; i < players.length; i++) {
-    if (players[i].id !== state.roundWinner) rest.push(players[i]);
-  }
-  rest.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
-  var places = ["segundo", "tercer"];
-  for (var j = 0; j < Math.min(2, rest.length); j++) {
-    parts.push("En " + places[j] + " lugar, " + rest[j].name + ", con " + ptsWord(rest[j].score || 0) + ".");
-  }
-  return parts.join(" ");
+  var totals = byRound.slice().sort(function (a, b) { return b.total - a.total; });
+  text += " En el marcador general: " + placesSpeech(totals.map(function (s) { return { name: s.name, score: s.total }; }));
+  return text;
 }
 
 /**
- * Anuncio del ganador final: nombre + TOTAL acumulado del marcador.
- * Ejemplo: "¡El ganador del juego es Tato, con 1250 puntos! En segundo
- * lugar, Milly, con 700 puntos."
+ * Anuncio del ganador final (?v=9, esquema de la versión de Muse):
+ * gran ganador con su TOTAL acumulado + podio final completo (1º, 2º y
+ * 3º por total) + felicitación. Ejemplo: "¡Fin del juego! ¡El gran
+ * ganador es Tato, con 1250 puntos! El podio final: Primer lugar: Tato,
+ * con 1250 puntos. Segundo lugar: Milly, con 900 puntos. Tercer lugar:
+ * Ledya, con 800 puntos. ¡Felicidades, Tato!"
  */
 function buildGameOverAnnouncement(state) {
   if (!state || !state.winner) return "";
   var players = state.players || [];
+  if (!players.length) return "";
   var winner = playerById(state, state.winner);
+  var sorted = players.slice().sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
+  if (!winner) winner = sorted[0];
   if (!winner) return "";
-  var parts = ["¡El ganador del juego es " + winner.name + ", con " + ptsWord(winner.score || 0) + "!"];
-  var rest = [];
-  for (var i = 0; i < players.length; i++) {
-    if (players[i].id !== state.winner) rest.push(players[i]);
-  }
-  rest.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
-  if (rest.length > 0) {
-    parts.push("En segundo lugar, " + rest[0].name + ", con " + ptsWord(rest[0].score || 0) + ".");
-  }
+  var parts = ["¡Fin del juego! ¡El gran ganador es " + winner.name + ", con " + ptsWord(winner.score || 0) + "!"];
+  parts.push("El podio final: " + placesSpeech(sorted.map(function (p) { return { name: p.name, score: p.score || 0 }; })));
+  parts.push("¡Felicidades, " + winner.name + "!");
   return parts.join(" ");
 }
 
@@ -1299,7 +1331,7 @@ function renderScoreboard(state) {
     }
     return '<div class="player-card' + (isMe ? " me" : "") + (isBasta ? " basta-by" : "") + '">' +
       '<div class="p-tag' + tagCls + '">' + esc(tag) + '</div>' +
-      '<div class="p-name">' + esc(p.name) + '</div>' +
+      '<div class="p-name">' + (p.isHost ? "👑 " : "") + esc(p.name) + '</div>' +
       '<div class="p-score">' + (typeof p.score === "number" ? p.score : 0) + '</div>' +
       progHtml +
       '</div>';
@@ -1501,7 +1533,7 @@ function renderReady(state) {
   var players = state.players || [];
   var iAmReady = me(state) ? me(state).ready : false;
   var rows = players.map(function (p) {
-    return '<div class="ready-row' + (p.ready ? " is-ready" : "") + '"><span>' + esc(p.name) + (p.id === myId ? " (tú)" : "") + '</span>' +
+    return '<div class="ready-row' + (p.ready ? " is-ready" : "") + '"><span>' + esc(p.name) + (p.id === myId ? " (tú)" : "") + (p.isHost ? " 👑 anfitrión" : "") + '</span>' +
       '<span class="' + (p.ready ? "st-yes" : "st-no") + '">' + (p.ready ? "✅ ¡Listo!" : "⏳ Esperando…") + '</span></div>';
   }).join("");
   stage.innerHTML = '<div class="lobby-card">' +
@@ -1627,12 +1659,20 @@ function categoryLabel(state, id) {
   return id;
 }
 
-/** Salir de la sala (?v=6): cierra el socket y vuelve al lobby.
- *  Antes no había botón "Salir" en fin de ronda y había que recargar
- *  la página para salir (así le pasó a Milly en la partida CNWN). */
+/** Salir de la sala (?v=6 + ?v=9): avisa al servidor con {type:"leave"}
+ *  para que borre el asiento de inmediato y traspase el rol de anfitrión
+ *  si era el que se va (antes solo se cerraba el socket y el servidor lo
+ *  marcaba desconectado hasta la purga de 5 min). El cierre del socket se
+ *  retrasa 150 ms para que el mensaje alcance a salir. */
 function leaveRoom() {
+  if (!demoMode && ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify({ type: "leave" })); } catch (e) {}
+  }
+  var sock = ws;
+  setTimeout(function () {
+    if (sock) { try { sock.close(); } catch (e) {} }
+  }, 150);
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-  if (ws) { try { ws.close(); } catch (e) {} }
   ws = null;
   myId = null; roomCode = ""; currentState = null;
   draft = {}; lastSyncedDraft = {}; draftBonus = ""; lastSyncedBonus = "";
@@ -1709,6 +1749,13 @@ function renderGameOver(state) {
   var stage = $("stage");
   var winner = state.winner ? playerById(state, state.winner) : null;
   var podium = state.podium || [];
+  // ?v=9: anfitrión de la sala (solo él pide la revancha).
+  var hostName = "el anfitrión";
+  if (state.hostId) {
+    var host = playerById(state, state.hostId);
+    if (host) hostName = host.name;
+  }
+  var iAmHost = !state.hostId || state.hostId === myId;
   var medals = ["🥇", "🥈", "🥉"];
   var spots = podium.slice(0, 3).map(function (id, i) {
     var p = playerById(state, id);
@@ -1728,8 +1775,12 @@ function renderGameOver(state) {
     (winner ? '<div class="big-name">' + esc(winner.name) + '</div><p class="phase-sub">👑 ¡GANADOR DEL JUEGO con <b>' + (winner.score || 0) + ' puntos</b>!</p>' : "") +
     '<div class="podium">' + spots + '</div>' +
     (rest ? '<div class="podium-rest">' + rest + '</div>' : "") +
-    '<div class="btn-row"><button class="btn" id="rematchBtn">🔄 ¡Revancha!</button></div>' +
-    '<p class="phase-sub">La revancha arranca directo, sin ponerse listos otra vez.</p>' +
+    // ?v=9 (port de la versión de Muse): la revancha la pide SOLO el
+    // anfitrión; los demás esperan a que la pida. Sin hostId (estados
+    // viejos) se permite a todos, para no dejar la sala sin revancha.
+    (iAmHost ? '<div class="btn-row"><button class="btn" id="rematchBtn">🔄 ¡Revancha!</button></div>' +
+    '<p class="phase-sub">La revancha arranca directo, sin ponerse listos otra vez.</p>'
+    : '<p class="phase-sub">Esperando a que <b>' + esc(hostName) + '</b> pida la revancha…</p>') +
     '<div class="btn-row"><button class="btn btn-ghost" id="leaveBtn">🚪 Salir de la sala</button></div></div>';
   var rb = $("rematchBtn");
   if (rb) rb.addEventListener("click", function () {
@@ -1786,12 +1837,13 @@ function demoStates() {
   var base = {
     code: "DEMO", totalRounds: 5, round: 1, letter: "R", usedLetters: ["R"],
     categories: cats, bonusCategories: bonusCats, bonusCategory: null,
-    myAnswers: {}, myBonus: "", progress: { p1: 9, p2: 7, p3: 4 },
+    myAnswers: {}, myBonus: "", progress: { p1: 7, p2: 7, p3: 4 },
     bastaBy: null, gracePlayer: null, prevRoundWinner: null,
     roundWinner: null, roundPoints: {}, frozenPoints: null, results: null,
     winner: null, podium: [], deadline: null,
+    hostId: "p1",
     players: [
-      { id: "p1", name: "Tato", score: 750, ready: true, continued: false },
+      { id: "p1", name: "Tato", score: 750, ready: true, continued: false, isHost: true },
       { id: "p2", name: "Milly", score: 600, ready: true, continued: false },
       { id: "p3", name: "Ledya", score: 450, ready: false, continued: false }
     ]

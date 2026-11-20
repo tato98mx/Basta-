@@ -15,6 +15,7 @@ import { DurableObject } from "cloudflare:workers";
 import {
   addPlayer,
   createGame,
+  leavePlayer,
   markConnected,
   markDisconnected,
   maybeEnterReady,
@@ -362,8 +363,22 @@ export class RoomDO extends DurableObject<Env> {
       case "rematch": {
         // ?v=8 (A6): solo un jugador de la sala puede pedir revancha; un
         // socket que ni siquiera hizo join no reinicia la partida.
+        // ?v=9: además solo el ANFITRIÓN puede pedirla (port de la
+        // versión de Muse); si el anfitrión salió, el rol ya pasó al
+        // jugador más antiguo (ver leavePlayer / purga en game.ts).
         if (!playerId) break;
-        apply(rematch(state, { now }));
+        apply(rematch(state, { now, playerId }));
+        break;
+      }
+      case "leave": {
+        // ?v=9 (port de leaveGame de la versión de Muse): salida
+        // explícita; el jugador se borra de la sala de inmediato (antes
+        // solo se marcaba desconectado y se purgaba a los 5 min) y, si
+        // era el anfitrión, el rol pasa al jugador más antiguo.
+        if (!playerId) break;
+        apply(leavePlayer(state, playerId));
+        // El socket que se va ya no necesita el estado; se cierra desde
+        // el cliente tras enviar este mensaje.
         break;
       }
       case "ping": {

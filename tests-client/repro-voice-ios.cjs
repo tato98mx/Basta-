@@ -141,12 +141,17 @@ async function main() {
   if (!ios.dropped.length) console.log("     (ninguno)");
 
   const joined = ios.delivered.join(" | ");
+  // ?v=9 (esquema de Muse, SPEC.md §6): ganador + podio de la ronda +
+  // top 3 general; final con gran ganador + podio final + felicitación.
   const checks = [
     ["dice la letra al inicio", /¡La letra es [A-Z]!/.test(joined)],
     ["dice la cuenta atrás", /Tres/.test(joined) && /Dos/.test(joined) && /Uno/.test(joined)],
-    ["dice ganador de ronda con puntos", /El ganador de la ronda es Tato, con 700 puntos/.test(joined)],
-    ["dice el 2º lugar con puntos", /En segundo lugar, Ledya, con 700 puntos/.test(joined)],
-    ["dice el ganador final", /El ganador del juego es Tato, con 2100 puntos/.test(joined)],
+    ["dice ganador de ronda con puntos", /¡Tato ganó la ronda 1 con 700 puntos/.test(joined)],
+    ["dice el podio de la ronda", /El podio de la ronda: Primer lugar: Tato, con 700 puntos/.test(joined)],
+    ["dice el 2º lugar con puntos", /Segundo lugar: Ledya, con 700 puntos/.test(joined)],
+    ["dice el marcador general", /En el marcador general: Primer lugar: Tato, con 700 puntos/.test(joined)],
+    ["dice el gran ganador final", /¡El gran ganador es Tato, con 2100 puntos/.test(joined)],
+    ["dice el podio final y felicita", /El podio final: Primer lugar: Tato, con 2100 puntos/.test(joined) && /¡Felicidades, Tato!/.test(joined)],
   ];
   let fail = 0;
   for (const [label, ok] of checks) {

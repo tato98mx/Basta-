@@ -153,12 +153,16 @@ check(s.roundWinner === "p1", "Tato gana la ronda 1 (empate, desempate: cantó �
 check(sameState(tato.lastState, ledya.lastState), "los dos clientes ven el mismo estado");
 
 // --- Anuncio de fin de ronda con el estado REAL del servidor ---
+// ?v=9 (esquema de Muse, SPEC.md §6): ganador + podio de la ronda (por
+// puntos DE LA RONDA) + top 3 del marcador general (por TOTAL acumulado).
 {
   const text = BASTA.buildRoundEndAnnouncement(s);
   console.log(`  Anuncio de voz ronda 1: "${text}"`);
   const winnerName = s.players.find((p) => p.id === s.roundWinner).name;
-  check(text.includes(`El ganador de la ronda es ${winnerName}, con 700 puntos.`), "el anuncio nombra al ganador con sus puntos DE LA RONDA (700)");
-  check(text.includes("En segundo lugar, Ledya, con 700 puntos."), "el anuncio nombra el 2º lugar con su TOTAL acumulado (700)");
+  check(text.includes(`¡${winnerName} ganó la ronda 1 con 700 puntos!`), "el anuncio nombra al ganador con sus puntos DE LA RONDA (700)");
+  check(text.includes("El podio de la ronda: Primer lugar: Tato, con 700 puntos."), "el anuncio nombra el podio de la ronda con puntos DE LA RONDA");
+  check(text.includes("Segundo lugar: Ledya, con 700 puntos."), "el anuncio nombra el 2º del podio de la ronda");
+  check(text.includes("En el marcador general: Primer lugar: Tato, con 700 puntos."), "el anuncio nombra el top del marcador general con el TOTAL acumulado (700)");
   check(!text.includes("tercer"), "con 2 jugadores el anuncio NO menciona tercer lugar");
 }
 tato.send({ type: "continue" });
@@ -192,8 +196,13 @@ check(s.roundPoints.p1 === 700 && s.roundPoints.p2 === 700, "puntos ronda 2: 700
 {
   const text = BASTA.buildRoundEndAnnouncement(s);
   console.log(`  Anuncio de voz ronda 2: "${text}"`);
-  check(text.includes("El ganador de la ronda es Ledya, con 700 puntos."), "anuncio ronda 2: ganadora Ledya, 700 pts de ronda");
-  check(text.includes("En segundo lugar, Tato, con 1400 puntos."), "anuncio ronda 2: 2º Tato con TOTAL acumulado 1400");
+  // ?v=9: el ganador anunciado debe ser el roundWinner del servidor
+  // (Ledya: empate 700-700, desempate ¡BASTA!, SPEC.md §1 y §6) y el
+  // podio de la ronda va por puntos DE LA RONDA; el general, por TOTAL
+  // acumulado (1400-1400, primero en orden de entrada: Tato).
+  check(text.includes("¡Ledya ganó la ronda 2 con 700 puntos!"), "anuncio ronda 2: ganadora Ledya (roundWinner, desempate ¡BASTA!), 700 pts de ronda");
+  check(text.includes("El podio de la ronda: Primer lugar: Tato, con 700 puntos."), "anuncio ronda 2: podio de la ronda con puntos DE LA RONDA (empate 700-700: primero en orden de entrada)");
+  check(text.includes("En el marcador general: Primer lugar: Tato, con 1400 puntos."), "anuncio ronda 2: general con TOTAL acumulado 1400 (Tato primero en orden)");
 }
 // Puerta de Continuar: con solo Tato no avanza; con los 2, sí.
 tato.send({ type: "continue" });
@@ -223,8 +232,12 @@ check(s.players.every((p) => p.score === 2100), "marcador final: 2100-2100");
 {
   const text = BASTA.buildGameOverAnnouncement(s);
   console.log(`  Anuncio de voz final: "${text}"`);
-  check(text.includes("¡El ganador del juego es Tato, con 2100 puntos!"), "anuncio final: ganador Tato con su total 2100");
-  check(text.includes("En segundo lugar, Ledya, con 2100 puntos."), "anuncio final: 2º Ledya con 2100");
+  // ?v=9 (SPEC.md §6): gran ganador con su TOTAL + podio final completo
+  // + "¡Felicidades, <nombre>!".
+  check(text.includes("¡Fin del juego! ¡El gran ganador es Tato, con 2100 puntos!"), "anuncio final: gran ganador Tato con su total 2100");
+  check(text.includes("El podio final: Primer lugar: Tato, con 2100 puntos."), "anuncio final: podio final con el 1º por total");
+  check(text.includes("Segundo lugar: Ledya, con 2100 puntos."), "anuncio final: 2º Ledya con 2100");
+  check(text.includes("¡Felicidades, Tato!"), "anuncio final: felicitación al ganador");
 }
 
 // GET /api/room debe devolver el mismo estado
